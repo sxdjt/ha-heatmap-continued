@@ -1,9 +1,3 @@
 {
-  "scripts": {
-    "prebuild": "python3 build/rollup_scales.py",
-    "build": "esbuild src/heatmap-card-anchor.js --loader:.json=json --bundle --minify --outfile=heatmap-card.js"
-  },
-  "dependencies": {
-    "esbuild": "^0.17.18"
-  }
+  "description": "No build step required. Edit heatmap-card.js directly and deploy to Home Assistant."
 }
