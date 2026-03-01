@@ -1,118 +1,168 @@
-# Heatmap card for Home Assistant
-<p align="center">
-  <img width="600" alt="A Heat map of solar energy generation" src="images/banner.png">
-</p>
+# Heatmap Card for Home Assistant
 
-Custom card enabling [Heat maps](https://en.wikipedia.org/wiki/Heat_map) in Home Assistant. Makes it simple to visualize the data in your Home Assistant, as a heatmap, in a way that (hopefully) makes sense to you.
+![GitHub Release](https://img.shields.io/github/v/release/sxdjt/ha-heatmap-card?style=for-the-badge)
+![GitHub License](https://img.shields.io/github/license/sxdjt/ha-heatmap-card?style=for-the-badge)
+[![AI Assisted](https://img.shields.io/badge/AI-Claude%20Code-AAAAAA.svg?style=for-the-badge)](https://claude.ai/code)
 
-Will pick a hopefully useful scale out of the box based on your type of data ([Device Class](https://www.home-assistant.io/integrations/sensor/#device-class)), but you can override most aspects of the card to suit your needs.
+<img width="600" alt="Heatmap card showing solar energy generation" src="images/banner.png">
 
-## Current state?
-* Somewhat real world tested, but there might well be corner cases.
-* Still need a decent chunk of work in terms of built-in color scales for various sensor types. Expect the scales to change.
-* Bit of polish still needed in some spots.
+A Home Assistant Lovelace card that displays sensor history as a [heat map](https://en.wikipedia.org/wiki/Heat_map), making it easy to spot patterns and trends across days at a glance.
+
+---
+
+## Features
+
+- **Automatic scale selection** - picks a sensible color scale based on the entity's device class
+- **Built-in absolute scales** - purpose-built scales for temperature, CO2, PM2.5, air quality, and more
+- **Built-in relative scales** - general-purpose palettes that stretch to fit your data range
+- **Fahrenheit support** - dedicated Fahrenheit variants for all built-in temperature scales
+- **Custom color scales** - define your own absolute or relative scale in YAML
+- **Visual editor** - configure scales, thresholds, and display options without editing YAML
+- **Custom threshold editor** - build a color scale visually with add/remove steps and a color picker
+- **Configurable legend** - show or hide the legend; control decimal places on tick labels
+- **Min/max override** - lock the color range to fixed values for consistent comparisons
+
+---
 
 ## Installation
-### HACS
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=kandsten&repository=ha-heatmap-card&category=Lovelace)
 
-If you use [HACS](https://hacs.xyz) as-is, this card can be added as a **custom repository**. 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sxdjt&repository=ha-heatmap-card&category=Lovelace)
 
-(As always, you should be careful with software which lets you pull random code from the Internet and run it)
+### HACS (recommended)
 
-### Manual install
-  * Download `heatmap-card.js`, place it in your `config/www` directory.
-  * Add `/local/heatmap-card.js` in your Resource config, type of `JavaScript Module`.
+Add as a custom repository in HACS: `sxdjt/ha-heatmap-card`
 
-## Configuration using the GUI
-Most of the functionality of this card can be configured via the editor GUI.
+### Manual
 
-You pick between `absolute` scales and `relative` scales.
+1. Download `heatmap-card.js` and place it in your `config/www/` directory.
+2. Go to Settings -> Dashboards -> Resources and add `/local/heatmap-card.js` as a JavaScript Module.
 
-_Absolute scales_ cover things like PM<sub>2.5</sub> particle counts, VOC, CO<sup>2</sup> and temperature. For these scales, there's typically one or more authorities that define what's a good value and a bad value. For instance, for PM<sub>2.5</sub>, WHO is one such authority.
+---
 
-Absolute scales don't require any additional configuration, but they don't support all types of sensors.
+## Quick Start
 
-_Relative scales_ cover any data. You pick a color you fancy and optionally tell the card the min and max values of the data.
+### Minimal Configuration
 
-While setting min/max _is_ optional, it's encouraged to do so where possible, as the colors will be stable; a particular shade of green will always mean the same thing. Without setting min and max, it'll fluctuate depending on the data.
-
-<p align="center">
-  <img width="300" alt="A Heat map of solar energy generation" src="images/relative_scales.png">
-</p>
-
-## Configuration using YAML
-### Minimal example
-<img align="right" width="300" alt="A temperature display heat map" src="images/temperature.png">
-
-Given a minimal config, the card will try to figure out how to present data in a somewhat sane way:
-
-```
+```yaml
 type: custom:heatmap-card
-entity: sensor.aranet_uppe_temperature
+entity: sensor.living_room_temperature
 ```
 
-It'll pick a card `title` based on the name of the entity, present the default 21 days worth of 
-data and pick a color scheme and scale based on the entity [device type](https://www.home-assistant.io/integrations/sensor/).
+The card picks a title from the entity's friendly name, shows 21 days of history, and selects a color scale based on the entity's device class.
 
-It's a bit opinionated in what a "good" scale will be, and _may_ give you something that's not really 
-fit for your usage (for instance by assuming that temperature sensor data refers to _indoor_ temperature).
+<img width="300" alt="Temperature heatmap" src="images/temperature.png">
 
-This can be solved by picking a scale explicitly instead.
+### Energy Sensor Example
 
-<br clear="both"/>
-
-### Energy configuration example
-<img align="right" width="300" alt="A temperature display heat map" src="images/grid_usage.png">
-
-A slightly more involved example, setting the number of days to present as well as
-defining the `max` value. Setting a max value is important in order to make the display
-consistent across different time periods; ensuring that the same shade of color always
-translates to the same consumption.
-
-In the case of energy type entities, setting `max` to f.x the total production
-capacity in kW of a PV install or the main fuse capacity of your house would make
-sense.
-
-```
-title: Grid energy usage
+```yaml
 type: custom:heatmap-card
-entity: sensor.elforbrukning_lb
+entity: sensor.grid_power_usage
+title: Grid Energy Usage
+days: 20
 data:
   min: 0
   max: 14
-days: 20
 ```
 
-Some common fuse sizes and the corresponding maximum power draw:
+Setting `data.max` to a fixed value (such as your main fuse capacity in kW) keeps the color scale consistent across time periods.
 
-|Fuse size| kW / data.max |
-|     ---:|          ---: |
-|      16A|             11|
-|      20A|             14|
-|      25A|             17|
-|      35A|             24|
+<img width="300" alt="Grid energy heatmap" src="images/grid_usage.png">
 
-<br clear="both"/>
+---
 
+## Configuration
 
-### Custom color scales
-Don't fancy the out of the box color scales? Bring your own!
+### Card Options
 
-A color scale contains _steps_. Each `step` has a `value` and
-a `color` attached to it; these are used to create a gradient.
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `entity` | string | **required** | Entity ID to display |
+| `title` | string | Entity friendly name | Card title |
+| `data` | object | - | Data range configuration (see below) |
+| `days` | number | `21` | Number of days of history to show |
+| `device_class` | string | From entity | Override device class for scale auto-selection |
+| `display` | object | - | Display options (see below) |
+| `scale` | string or object | Auto (by device class) | Built-in scale name or custom scale definition |
 
-A scale also has a `type`, which is either `relative` or `absolute`.
+### data Options
 
-_Relative_ scales stretch from 0 to 1 and will scale automatically from your min value (default 0) to your max value; you bring the colors, the code will figure out the range. This is useful for any scale where the numbers aren't known in advance.
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `data.min` | number | Auto | Minimum value for the color scale |
+| `data.max` | number | Auto | Maximum value for the color scale |
 
-_Absolute_ scales map to the values defined in the scale itself. These are good for when you need to map a color to a specific value; for instance, 420 ppm worth of co₂ is good ([by some measure of good](https://www.ipcc.ch/)), 1000 ppm is getting hairy. This isn't going to be relative to your data; thus, absolute.
+### display Options
 
-A _relative_ scale example:
-```
-# This is an energy sensor
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `display.legend` | boolean | `true` | Show or hide the color scale legend |
+| `display.decimals` | number | Auto | Fixed decimal places for legend tick labels |
+
+---
+
+## Built-in Scales
+
+Scales are selected automatically based on `device_class`, but can be set explicitly with the `scale` option.
+
+### Absolute Scales
+
+Absolute scales map colors to specific values, regardless of the data range. Units are fixed.
+
+| Scale Name | Units | Device Class |
+|------------|-------|--------------|
+| `carbon dioxide` | ppm | carbon_dioxide |
+| `indoor temperature f` | °F | temperature |
+| `indoor temperature` | °C | temperature |
+| `nitrogen dioxide eaqi` | µg/m³ | nitrogen_dioxide |
+| `outdoor temperature f` | °F | temperature |
+| `outdoor temperature oceanic f` | °F | temperature |
+| `outdoor temperature oceanic` | °C | temperature |
+| `outdoor temperature` | °C | temperature |
+| `ozone eaqi` | µg/m³ | ozone |
+| `pm10 eaqi` | µg/m³ | pm10 |
+| `pm25 eaqi` | µg/m³ | pm25 |
+| `pm25` | µg/m³ | pm25 |
+| `sulphur dioxide eaqi` | µg/m³ | sulphur_dioxide |
+
+### Relative Scales
+
+Relative scales stretch from your minimum value to your maximum value. They work with any sensor.
+
+| Scale Name | Description |
+|------------|-------------|
+| `black hot` | Black to white via orange/red |
+| `colorbrewer 5cl bugn` | ColorBrewer blue-green |
+| `colorbrewer 5cl bupu` | ColorBrewer blue-purple |
+| `colorbrewer 5cl rdpu` | ColorBrewer red-purple |
+| `colorbrewer 5cl ylorbr` | ColorBrewer yellow-orange-brown |
+| `iron red` | Black to yellow via red |
+| `stoplight` | Green to red |
+| `white hot` | White to black |
+| `wikipedia climate cool2 f` | Wikipedia climate chart (Fahrenheit) |
+| `wikipedia climate cool2` | Wikipedia climate chart (Celsius) |
+
+---
+
+## Custom Color Scales
+
+### Via the Visual Editor
+
+The visual editor includes a threshold editor that lets you build custom scales without touching YAML:
+
+- Toggle "Use custom thresholds" on the scale picker
+- Choose **Fixed thresholds** (absolute) or **Auto-range** (relative)
+- Add or remove color steps; set values for fixed scales
+- Return to a built-in scale with "Back to preset scales"
+
+### Via YAML
+
+Custom scales are defined as an object with a `type` and a list of `steps`.
+
+**Relative scale** (colors stretch across your data range):
+
+```yaml
 type: custom:heatmap-card
-entity: sensor.total_pv_generation
+entity: sensor.solar_power
 data:
   max: 4.8
 scale:
@@ -126,23 +176,28 @@ scale:
       color: '#FF00FF'
 ```
 
-An _absolute_ scale example:
-```
-# This is a temperature sensor
+**Absolute scale** (colors map to specific values):
+
+```yaml
 type: custom:heatmap-card
-entity: sensor.aranet_uppe_temperature
+entity: sensor.living_room_temperature
 scale:
   type: absolute
   steps:
     - value: 10
-      color: '#000000'
+      color: '#0000FF'
     - value: 20
-      color: '#FFFF00'
+      color: '#00FF00'
     - value: 30
-      color: '#FF00FF'
+      color: '#FF0000'
 ```
 
+---
 
-## General thanks
-* [Home Assistant](https://www.home-assistant.io/) is nifty and I  appreciate the work that has gone into making sure that data is standardized and decorated in a sane way. A gadget like this card would be much harder without that effort as a foundation.
-* [chroma-js](https://gka.github.io/chroma.js/) for the heavy lifting of color related operations.
+## Contributing
+
+Issues and pull requests welcome on [GitHub](https://github.com/sxdjt/ha-heatmap-card).
+
+## License
+
+Apache License 2.0 - see [LICENSE](LICENSE) file for details
