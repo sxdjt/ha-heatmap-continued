@@ -289,11 +289,11 @@ const BUILTIN_SCALES = [
         "value": 18
       },
       {
-        "color": "#F5F5F5",
+        "color": "#4caf50",
         "value": 20
       },
       {
-        "color": "#F5F5F5",
+        "color": "#4caf50",
         "value": 22
       },
       {
@@ -329,11 +329,11 @@ const BUILTIN_SCALES = [
         "value": 64
       },
       {
-        "color": "#F5F5F5",
+        "color": "#4caf50",
         "value": 68
       },
       {
-        "color": "#F5F5F5",
+        "color": "#4caf50",
         "value": 71
       },
       {
@@ -454,11 +454,11 @@ const BUILTIN_SCALES = [
         "value": 15
       },
       {
-        "color": "#F5F5F5",
+        "color": "#4caf50",
         "value": 22
       },
       {
-        "color": "#F5F5F5",
+        "color": "#4caf50",
         "value": 27
       },
       {
@@ -509,11 +509,11 @@ const BUILTIN_SCALES = [
         "value": 59
       },
       {
-        "color": "#F5F5F5",
+        "color": "#4caf50",
         "value": 71
       },
       {
-        "color": "#F5F5F5",
+        "color": "#4caf50",
         "value": 80
       },
       {
@@ -1934,10 +1934,7 @@ class HeatmapCardEditor extends LitElement {
         if (!this.device_class) { return; }
 
         if (typeof(this._config.scale) === 'object') {
-            return html`
-                <h3>Color scale</h3>
-                <p>Using a custom scale. Use the code editor to change it.</p>
-            `;
+            return this.render_custom_scale_editor();
         }
 
         // Absolute scales first (specific, value-anchored), then relative (generic)
@@ -2017,7 +2014,185 @@ class HeatmapCardEditor extends LitElement {
             </ha-select>
             ${range_section}
             ${this.render_scale_docs()}
+            <div>
+                <a href="#" @click=${(e) => { e.preventDefault(); this._switch_to_custom(); }}>
+                    Use custom thresholds
+                </a>
+            </div>
         `;
+    }
+
+    render_custom_scale_editor() {
+        const scale = this._config.scale;
+        const steps = scale.steps || [];
+        const is_absolute = scale.type !== 'relative';
+
+        // Range controls for auto-range (relative) custom scales
+        var range_section = '';
+        if (!is_absolute) {
+            range_section = html`
+                <h4>Data range</h4>
+                <div>
+                    <ha-textfield
+                        .label=${"Minimum value"}
+                        .value=${this._config.data?.min ?? 'auto'}
+                        .placeholder=0
+                        .disabled=${this._config.data?.min === 'auto' || this._config.data?.min === undefined}
+                        .configValue=${"data.min"}
+                        @input=${this.update_field}
+                    ></ha-textfield>
+                    <ha-formfield .label=${"Infer from sensor data"} @change=${this.update_field}>
+                        <ha-checkbox
+                            .checked=${this._config.data?.min === 'auto' || this._config.data?.min === undefined}
+                            .value=${"auto"}
+                            .configValue=${"data.min"}
+                        ></ha-checkbox>
+                    </ha-formfield>
+                </div>
+                <div>
+                    <ha-textfield
+                        .label=${"Maximum value"}
+                        .value=${this._config.data?.max ?? 'auto'}
+                        .disabled=${this._config.data?.max === 'auto' || this._config.data?.max === undefined}
+                        .configValue=${"data.max"}
+                        @input=${this.update_field}
+                    ></ha-textfield>
+                    <ha-formfield .label=${"Infer from sensor data"} @change=${this.update_field}>
+                        <ha-checkbox
+                            .checked=${this._config.data?.max === 'auto' || this._config.data?.max === undefined}
+                            .value=${"auto"}
+                            .configValue=${"data.max"}
+                        ></ha-checkbox>
+                    </ha-formfield>
+                </div>
+            `;
+        }
+
+        return html`
+            <h3>Custom scale</h3>
+            <ha-select
+                label="Scale type"
+                .value=${scale.type || 'absolute'}
+                @selected=${this._custom_type_changed}
+                @closed=${(e) => e.stopPropagation()}
+                fixedMenuPosition
+                naturalMenuWidth
+            >
+                <mwc-list-item value="absolute">Fixed thresholds (value + color)</mwc-list-item>
+                <mwc-list-item value="relative">Auto-range (colors only, stretches to data)</mwc-list-item>
+            </ha-select>
+            <div class="custom-steps">
+                ${steps.map((step, i) => html`
+                    <div class="custom-step-row">
+                        <input
+                            type="color"
+                            .value=${step.color || '#888888'}
+                            @change=${(e) => this._update_step_color(i, e.target.value)}
+                        >
+                        ${is_absolute ? html`
+                            <ha-textfield
+                                .label=${"Value"}
+                                .type=${"number"}
+                                .value=${step.value ?? ''}
+                                @change=${(e) => this._update_step_value(i, e.target.value)}
+                                style="flex:1"
+                            ></ha-textfield>
+                        ` : html`<span style="flex:1;padding:0 8px;align-self:center;">Step ${i + 1}</span>`}
+                        <button
+                            class="custom-step-remove"
+                            @click=${() => this._remove_step(i)}
+                            .disabled=${steps.length <= 2}
+                            title="Remove"
+                        >&#x2715;</button>
+                    </div>
+                `)}
+            </div>
+            <div>
+                <a href="#" @click=${(e) => { e.preventDefault(); this._add_step(); }}>+ Add threshold</a>
+            </div>
+            ${range_section}
+            <div>
+                <a href="#" @click=${(e) => { e.preventDefault(); this._reset_to_builtin(); }}>
+                    Back to preset scales
+                </a>
+            </div>
+        `;
+    }
+
+    _dispatch_config(config) {
+        const event = new Event('config-changed');
+        event.detail = {'config': config};
+        this.dispatchEvent(event);
+    }
+
+    _switch_to_custom() {
+        const config = JSON.parse(JSON.stringify(this._config));
+        config.scale = {
+            type: 'absolute',
+            name: 'Custom',
+            steps: [
+                {value: 0,   color: '#4caf50'},
+                {value: 50,  color: '#ffeb3b'},
+                {value: 100, color: '#cf0000'}
+            ]
+        };
+        this._dispatch_config(config);
+    }
+
+    _reset_to_builtin() {
+        const config = JSON.parse(JSON.stringify(this._config));
+        config.scale = this.scales.defaults_for(this.device_class);
+        delete config.data;
+        this._dispatch_config(config);
+    }
+
+    _add_step() {
+        const config = JSON.parse(JSON.stringify(this._config));
+        const steps = config.scale.steps || [];
+        const new_step = config.scale.type === 'relative'
+            ? {color: '#888888'}
+            : {value: 0, color: '#888888'};
+        steps.push(new_step);
+        config.scale.steps = steps;
+        this._dispatch_config(config);
+    }
+
+    _remove_step(index) {
+        const config = JSON.parse(JSON.stringify(this._config));
+        config.scale.steps.splice(index, 1);
+        this._dispatch_config(config);
+    }
+
+    _update_step_color(index, color) {
+        const config = JSON.parse(JSON.stringify(this._config));
+        config.scale.steps[index].color = color;
+        this._dispatch_config(config);
+    }
+
+    _update_step_value(index, value) {
+        const config = JSON.parse(JSON.stringify(this._config));
+        config.scale.steps[index].value = parseFloat(value);
+        this._dispatch_config(config);
+    }
+
+    _custom_type_changed(ev) {
+        ev.stopPropagation();
+        const type = ev.target.value;
+        if (!type) { return; }
+        const config = JSON.parse(JSON.stringify(this._config));
+        config.scale.type = type;
+        // Switching to relative: strip values from steps (colors only, evenly spaced)
+        // Switching to absolute: add evenly-spaced default values based on step count
+        if (type === 'relative') {
+            config.scale.steps = config.scale.steps.map(s => ({color: s.color}));
+        } else {
+            const count = config.scale.steps.length;
+            config.scale.steps = config.scale.steps.map((s, i) => ({
+                value: i * Math.round(100 / Math.max(count - 1, 1)),
+                color: s.color
+            }));
+        }
+        this._dispatch_config(config);
     }
 
     _scale_changed(ev) {
@@ -2200,6 +2375,41 @@ class HeatmapCardEditor extends LitElement {
             margin-left: 2em;
             margin-right: 2em;
             word-wrap: break-word;
+        }
+
+        .custom-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .custom-step-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .custom-step-row input[type="color"] {
+            width: 40px;
+            height: 40px;
+            border: none;
+            padding: 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .custom-step-remove {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--secondary-text-color);
+            font-size: 1.1em;
+            padding: 4px 8px;
+        }
+
+        .custom-step-remove:disabled {
+            opacity: 0.3;
+            cursor: default;
         }
 
         /* Don't mess with the line spacing */
