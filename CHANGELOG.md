@@ -1,0 +1,57 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Added
+- Custom threshold editor in the visual editor - build color scales without editing YAML
+  - "Use custom thresholds" toggle on the preset scale picker
+  - Scale type selector: Fixed thresholds (absolute) or Auto-range (relative)
+  - Fixed mode: per-step color picker and value field, ordered by value
+  - Auto-range mode: per-step color picker with optional min/max override
+  - Add/remove steps with minimum of 2 enforced
+  - "Back to preset scales" link to revert to a built-in scale
+- Configurable legend decimal places via `display.decimals` config option
+  - Accepts any integer >= 0; uses `toFixed()` for formatting
+  - When unset, existing auto-formatting behavior is preserved
+- Fahrenheit temperature color scales for all four built-in temperature scales:
+  - `indoor temperature f [°F]`
+  - `outdoor temperature f [°F]`
+  - `outdoor temperature oceanic f [°F]`
+  - `wikipedia climate cool2 f [°F]`
+
+### Changed
+- Removed esbuild build system; all source modules merged into a single deployable `heatmap-card.js` with no build step required
+- Replaced broken `mwc-tab-bar` scale picker UI with a flat `ha-select` dropdown showing all built-in scales with gradient previews
+- Replaced `ha-combo-box` elements with `ha-select` throughout the editor for reliable rendering in current HA versions
+- Inlined chroma.js, scale data, and device class mappings directly into the card file
+
+### Fixed
+- Null values in `min_from`/`max_from` were coercing to 0 in `Math.min`/`Math.max`, skewing auto-scaled range for sensors with data gaps
+
+## Prior Upstream Changes
+
+The following changes were made in the upstream repository before this fork diverged.
+
+### 2024-12-02
+- Re-render the heatmap approximately every 10 minutes
+- Fix custom scale compatibility with Home Assistant 2024.11
+- Add outside temperature scale for oceanic climate
+- Add scales for the European Air Quality Index (EAQI)
+
+### 2023-05-21
+- Support `state_class: total` entities
+- Fix mistakenly included `console.log()` statement
+- Check whether editor-selected entity supports long-term statistics
+
+### 2023-05-15
+- GUI card editor, additional scales, and numerous improvements
+
+### 2023-03-31
+- Improved tooltip display and other minor UI changes
+
+### 2023-03-28
+- Fix brittle data processing for `measurement` state class values
+- DST (daylight saving time) handling fixes
+- Localization fixes
