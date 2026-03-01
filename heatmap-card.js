@@ -309,6 +309,46 @@ const BUILTIN_SCALES = [
     "unit": "\u00b0C"
   },
   {
+    "device_class": "temperature",
+    "documentation": {
+      "text": "<p>Indoor temperatures related to human comfort levels. Amalgation\nof multiple sources. As always with temperature, individual\nfactors such as generics, clothing and activity level have a big\nimpact.</p>"
+    },
+    "key": "indoor temperature f",
+    "name": "Indoor temperature",
+    "steps": [
+      {
+        "color": "#0f3489",
+        "value": 53
+      },
+      {
+        "color": "#595ea3",
+        "value": 60
+      },
+      {
+        "color": "#7374b0",
+        "value": 64
+      },
+      {
+        "color": "#F5F5F5",
+        "value": 68
+      },
+      {
+        "color": "#F5F5F5",
+        "value": 71
+      },
+      {
+        "color": "#ea755a",
+        "value": 75
+      },
+      {
+        "color": "#cf0000",
+        "value": 82
+      }
+    ],
+    "type": "absolute",
+    "unit": "\u00b0F"
+  },
+  {
     "key": "iron red",
     "name": "Iron red",
     "steps": [
@@ -443,6 +483,61 @@ const BUILTIN_SCALES = [
   {
     "device_class": "temperature",
     "documentation": {
+      "text": "<p>Outdoor temperatures related to human comfort and risk levels.</p>\n<p>Note that this works best when using apparent (or <a href=\"https://en.wikipedia.org/wiki/Wet-bulb_temperature\" rel=\"noopener\" target=\"_blank\">wet bulb</a>)\ntemperature and taking wind chill into account, not just <a href=\"https://en.wikipedia.org/wiki/Dry-bulb_temperature\" rel=\"noopener\" target=\"_blank\">dry bulb</a>\ntemperature, such as a like a thermometer reading.</p>\n<p>Individual factors such as clothing, activity level, wind speed and\nexposure to sun all play a part in how we perceive temperature.\nSee this is a rough guideline.</p>"
+    },
+    "key": "outdoor temperature f",
+    "name": "Outdoor temperature",
+    "steps": [
+      {
+        "color": "#0f3489",
+        "legend": "Severe risk of frostbite",
+        "value": -22
+      },
+      {
+        "color": "#595ea3",
+        "legend": "Risk of frostbite",
+        "value": 32
+      },
+      {
+        "color": "#7374b0",
+        "legend": "Risk of hypothermia",
+        "value": 50
+      },
+      {
+        "color": "#7374b0",
+        "legend": "Chilling temperatures",
+        "value": 59
+      },
+      {
+        "color": "#F5F5F5",
+        "value": 71
+      },
+      {
+        "color": "#F5F5F5",
+        "value": 80
+      },
+      {
+        "color": "#ea755a",
+        "legend": "Risk of heat cramps or exhaustion",
+        "value": 89
+      },
+      {
+        "color": "#cf0000",
+        "legend": "Heat exhaustion more likely",
+        "value": 104
+      },
+      {
+        "color": "#5b0f8c",
+        "legend": "Heat stroke risk",
+        "value": 129
+      }
+    ],
+    "type": "absolute",
+    "unit": "\u00b0F"
+  },
+  {
+    "device_class": "temperature",
+    "documentation": {
       "text": "<p>Temperature scale specifically designed for oceanic climates - regions characterized \nby mild temperatures with rare extremes throughout the year.</p>\n<p>Found in areas such as Western Europe, the Pacific Northwest of North America, \nparts of Southern Chile, New Zealand, and other coastal regions under maritime influence.</p>"
     },
     "key": "outdoor temperature oceanic",
@@ -501,6 +596,68 @@ const BUILTIN_SCALES = [
     ],
     "type": "absolute",
     "unit": "\u00b0C"
+  },
+  {
+    "device_class": "temperature",
+    "documentation": {
+      "text": "<p>Temperature scale specifically designed for oceanic climates - regions characterized \nby mild temperatures with rare extremes throughout the year.</p>\n<p>Found in areas such as Western Europe, the Pacific Northwest of North America, \nparts of Southern Chile, New Zealand, and other coastal regions under maritime influence.</p>"
+    },
+    "key": "outdoor temperature oceanic f",
+    "name": "Outdoor temperature (Oceanic Climate)",
+    "steps": [
+      {
+        "color": "#112488",
+        "legend": "Exceptionally cold for oceanic climate",
+        "value": 14
+      },
+      {
+        "color": "#1846A1",
+        "legend": "Very cold for oceanic climate",
+        "value": 23
+      },
+      {
+        "color": "#1F67C0",
+        "legend": "Freezing",
+        "value": 32
+      },
+      {
+        "color": "#4CA9D5",
+        "legend": "Cold",
+        "value": 41
+      },
+      {
+        "color": "#81DB7D",
+        "legend": "Cool",
+        "value": 50
+      },
+      {
+        "color": "#B5DA60",
+        "legend": "Mild",
+        "value": 59
+      },
+      {
+        "color": "#E0DD4A",
+        "legend": "Pleasant",
+        "value": 68
+      },
+      {
+        "color": "#F98F46",
+        "legend": "Warm",
+        "value": 77
+      },
+      {
+        "color": "#F5392A",
+        "legend": "Very warm for oceanic climate",
+        "value": 86
+      },
+      {
+        "color": "#BE31B1",
+        "legend": "Exceptionally hot for oceanic climate",
+        "value": 95
+      }
+    ],
+    "type": "absolute",
+    "unit": "\u00b0F"
   },
   {
     "device_class": "ozone",
@@ -782,6 +939,54 @@ const BUILTIN_SCALES = [
     ],
     "type": "absolute",
     "unit": "\u00b0C"
+  },
+  {
+    "device_class": "temperature",
+    "documentation": {
+      "license": {
+        "name": "Creative Commons Attribution-ShareAlike License 3.0",
+        "url": "https://creativecommons.org/licenses/by-sa/3.0/"
+      },
+      "text": "<p>Wikipedia's <a href=\"https://en.wikipedia.org/wiki/Module:Weather\" rel=\"noopener\" target=\"_blank\">Weather</a> template temperature graph color scheme, cool2 version.\nSlightly modified by setting the minimum to -76\u00b0F, instead of -130\u00b0F.</p>"
+    },
+    "key": "wikipedia climate cool2 f",
+    "name": "Wikipedia climate, cool2",
+    "steps": [
+      {
+        "color": "#0000A2",
+        "value": -76
+      },
+      {
+        "color": "#0000D7",
+        "value": -45
+      },
+      {
+        "color": "#6565FF",
+        "value": -11
+      },
+      {
+        "color": "#FCFCFF",
+        "value": 39
+      },
+      {
+        "color": "#FF7F00",
+        "value": 73
+      },
+      {
+        "color": "#FF2C00",
+        "value": 95
+      },
+      {
+        "color": "#F60000",
+        "value": 107
+      },
+      {
+        "color": "#000000",
+        "value": 132
+      }
+    ],
+    "type": "absolute",
+    "unit": "\u00b0F"
   }
 ];
 
