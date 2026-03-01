@@ -1296,15 +1296,18 @@ class HeatmapCard extends LitElement {
             return;
         }
         const ticks = this.legend_scale(this.meta.scale);
+        // display.decimals: integer 0+ sets fixed decimal places; undefined/non-integer = auto
+        const decimals = this.config.display?.decimals;
+        const fmt = (val) => Number.isInteger(decimals) ? Number(val).toFixed(decimals) : val;
         return html`
             <div class="legend-container">
                 <div id="legend" style="background: linear-gradient(90deg, ${this.meta.scale.css})"></div>
                 <div class="tick-container">
                     ${ticks.map((tick) => html`
                         <div class="legend-tick" style="left: ${tick[0]}%;"">
-                            <div class="caption">${tick[1]} ${this.meta.scale.unit}</div>
+                            <div class="caption">${fmt(tick[1])} ${this.meta.scale.unit}</div>
                         </div>
-                        <span class="legend-shadow">${tick[1]} ${this.meta.scale.unit}</span>`
+                        <span class="legend-shadow">${fmt(tick[1])} ${this.meta.scale.unit}</span>`
                     )}
                 </div>
             </div>
@@ -2076,6 +2079,16 @@ class HeatmapCardEditor extends LitElement {
             ></ha-textfield>
             ${this.render_scale_picker()}
             <h3>Card elements</h3>
+            <ha-textfield
+                .label=${"Legend decimal places"}
+                .placeholder=${"auto"}
+                .type=${"number"}
+                .value=${this._config.display?.decimals ?? ''}
+                .configValue=${"display.decimals"}
+                @input=${this.update_field}
+                .helper=${"Decimal places shown in the legend bar (default: auto)"}
+                .helperPersistent=${true}
+            ></ha-textfield>
             <ha-textfield
                 .label=${"Card title"}
                 .placeholder=${(this.entity && this.entity.attributes.friendly_name) || ''}
