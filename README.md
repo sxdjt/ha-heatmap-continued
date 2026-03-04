@@ -1,7 +1,7 @@
 # Heatmap Card for Home Assistant - Continued
 
-![GitHub Release](https://img.shields.io/github/v/release/sxdjt/ha-heatmap-card?style=for-the-badge)
-![GitHub License](https://img.shields.io/github/license/sxdjt/ha-heatmap-card?style=for-the-badge)
+![GitHub Release](https://img.shields.io/github/v/release/sxdjt/ha-heatmap-continued?style=for-the-badge)
+![GitHub License](https://img.shields.io/github/license/sxdjt/ha-heatmap-continued?style=for-the-badge)
 [![AI Assisted](https://img.shields.io/badge/AI-Claude%20Code-AAAAAA.svg?style=for-the-badge)](https://claude.ai/code)
 
 <img width="600" alt="Heatmap card showing solar energy generation" src="images/banner.png">
@@ -32,7 +32,7 @@ All credit and kudos go to @kandsten and the other contributors.
 
 ## Installation
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sxdjt&repository=ha-heatmap-card&category=Lovelace)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sxdjt&repository=ha-heatmap-continued&category=Lovelace)
 
 ---
 
@@ -193,7 +193,7 @@ scale:
 
 ## Contributing
 
-Issues and pull requests welcome on [GitHub](https://github.com/sxdjt/ha-heatmap-card).
+Issues and pull requests welcome on [GitHub](https://github.com/sxdjt/ha-heatmap-continued).
 
 ## License
 
