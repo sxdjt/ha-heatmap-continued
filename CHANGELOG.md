@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.0.0] - 2026-03-03
 
 ### Added
 - Custom threshold editor in the visual editor - build color scales without editing YAML

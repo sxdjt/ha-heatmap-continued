@@ -2436,7 +2436,7 @@ window.customCards.push({
     description: "Heat maps of entities or energy data",
 });
 console.info(
-    "%c HEATMAP-CARD %c loaded ",
+    "%c HEATMAP-CARD %c v1.0.0 loaded ",
     "color: white; background: #555; font-weight: bold;",
     "color: #555; background: white; font-weight: bold;"
 );
