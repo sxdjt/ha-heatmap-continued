@@ -197,4 +197,8 @@ Issues and pull requests welcome on [GitHub](https://github.com/sxdjt/ha-heatmap
 
 ## License
 
-Apache License 2.0 - see [LICENSE](LICENSE) file for details
+This project is primarily licensed under the **MIT License**. 
+
+However, to maintain compatibility with original contributions, it remains available under the **Apache License 2.0**. 
+
+See the [LICENSE](LICENSE) file for full details.
