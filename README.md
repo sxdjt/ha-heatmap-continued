@@ -1,4 +1,4 @@
-# Heatmap Card for Home Assistant
+# Heatmap Card for Home Assistant - Continued
 
 ![GitHub Release](https://img.shields.io/github/v/release/sxdjt/ha-heatmap-card?style=for-the-badge)
 ![GitHub License](https://img.shields.io/github/license/sxdjt/ha-heatmap-card?style=for-the-badge)
@@ -7,6 +7,12 @@
 <img width="600" alt="Heatmap card showing solar energy generation" src="images/banner.png">
 
 A Home Assistant Lovelace card that displays sensor history as a [heat map](https://en.wikipedia.org/wiki/Heat_map), making it easy to spot patterns and trends across days at a glance.
+
+## Continuation Notice: March 2026
+
+In discussions on my other heatmaps cards, many people have commented that @kandsten 's heatmap card was a good reference point.  I have checked with @kandsten and he has given his OK for me to release this as a continuation of his work.  The card will be maintained to ensure continued functionality and updated as needed.
+
+All credit and kudos go to @kandsten and the other contributors.
 
 ---
 
@@ -27,15 +33,6 @@ A Home Assistant Lovelace card that displays sensor history as a [heat map](http
 ## Installation
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sxdjt&repository=ha-heatmap-card&category=Lovelace)
-
-### HACS (recommended)
-
-Add as a custom repository in HACS: `sxdjt/ha-heatmap-card`
-
-### Manual
-
-1. Download `heatmap-card.js` and place it in your `config/www/` directory.
-2. Go to Settings -> Dashboards -> Resources and add `/local/heatmap-card.js` as a JavaScript Module.
 
 ---
 
@@ -84,14 +81,14 @@ Setting `data.max` to a fixed value (such as your main fuse capacity in kW) keep
 | `display` | object | - | Display options (see below) |
 | `scale` | string or object | Auto (by device class) | Built-in scale name or custom scale definition |
 
-### data Options
+### Data Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `data.min` | number | Auto | Minimum value for the color scale |
 | `data.max` | number | Auto | Maximum value for the color scale |
 
-### display Options
+### Display Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
