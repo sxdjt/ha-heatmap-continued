@@ -1,4 +1,4 @@
-name: HACS Action
+name: HACS Validation
 
 on:
   push:
@@ -11,10 +11,10 @@ permissions: {}
 
 jobs:
   hacs:
-    name: HACS Action
+    name: HACS Validation
     runs-on: "ubuntu-latest"
     steps:
-      - name: HACS Action
+      - name: HACS Validation
         uses: "hacs/action@main"
         with:
           category: "plugin"
