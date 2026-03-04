@@ -10,9 +10,9 @@ A Home Assistant Lovelace card that displays sensor history as a [heat map](http
 
 ## Continuation Notice: March 2026
 
-In discussions on my other heatmaps cards, many people have commented that @kandsten 's heatmap card was a good reference point.  I have checked with @kandsten and he has given his OK for me to release this as a continuation of his work.  The card will be maintained to ensure continued functionality and updated as needed.
+In discussions on my other heatmaps cards, many people have commented that [kandsten's heatmap card](https://github.com/kandsten/ha-heatmap-card) was a good reference point.  I have checked with @kandsten and he has given his OK for me to release this as a continuation of his work.  The card will be maintained to ensure continued functionality and updated as needed.
 
-All credit and kudos go to @kandsten and the other contributors.
+**All credit and kudos go to @kandsten and the other contributors.**
 
 ---
 
