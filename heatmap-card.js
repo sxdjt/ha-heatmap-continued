@@ -1947,10 +1947,11 @@ class HeatmapCardEditor extends LitElement {
             css: scale.css
         }});
 
-        const box_renderer = item => html`
-            <ha-list-item>
-                <div style="display: inline-block; margin-right: 15px; width: 120px; height: 12px; background: linear-gradient(90deg, ${item.css});"></div> ${item.label}
-            </ha-list-item>`;
+        // Show gradient preview for the currently selected scale
+        const selected_scale = all_scales.find(s => s.value === (this._config.scale || ''));
+        const gradient_preview = selected_scale ? html`
+            <div style="height:12px;border-radius:4px;margin-top:8px;background:linear-gradient(90deg, ${selected_scale.css});"></div>
+        ` : '';
 
         // Range controls only apply to relative scales (absolute scales have built-in fixed steps)
         var range_section = '';
@@ -1995,23 +1996,14 @@ class HeatmapCardEditor extends LitElement {
 
         return html`
             <h3>Color scale</h3>
-            <ha-select
-                label="Scale"
+            <ha-selector
+                .hass=${this.myhass}
+                .label=${"Scale"}
+                .selector=${{select: {options: all_scales.map(s => ({value: s.value, label: s.label}))}}}
                 .value=${this._config.scale || ''}
-                @selected=${this._scale_changed}
-                @closed=${(e) => e.stopPropagation()}
-                fixedMenuPosition
-                naturalMenuWidth
-            >
-                ${all_scales.map(scale => html`
-                    <mwc-list-item .value=${scale.value}>
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <div style="display:inline-block;width:80px;height:10px;border-radius:2px;flex-shrink:0;background:linear-gradient(90deg, ${scale.css});"></div>
-                            <span>${scale.label}</span>
-                        </div>
-                    </mwc-list-item>
-                `)}
-            </ha-select>
+                @value-changed=${this._scale_changed}
+            ></ha-selector>
+            ${gradient_preview}
             ${range_section}
             ${this.render_scale_docs()}
             <div>
@@ -2197,7 +2189,7 @@ class HeatmapCardEditor extends LitElement {
 
     _scale_changed(ev) {
         ev.stopPropagation();
-        const scale = ev.target.value;
+        const scale = ev.detail?.value ?? ev.target.value;
         if (!scale) { return; }
         const config = JSON.parse(JSON.stringify(this._config));
         config['scale'] = scale;
