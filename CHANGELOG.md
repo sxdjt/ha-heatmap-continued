@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-03-30
+
+### Fixed
+- Color scale picker broken in recent Home Assistant versions after HA migrated from MWC to MD3 components; replaced `ha-select` with `ha-selector`
+
+### Changed
+- License changed to MIT
+- README clarity improvements
+- `hacs.json`: added `render_readme: true` so HACS displays the README
+
 ## [1.0.0] - 2026-03-03
 
 ### Added
