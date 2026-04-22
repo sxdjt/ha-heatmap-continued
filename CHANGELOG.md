@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.0-beta.1] - 2026-04-21
+## [1.1.0] - 2026-04-21
 
 ### Added
 - Daily heatmap mode: set `mode: daily` to view day-level aggregates instead of hourly data
@@ -12,6 +12,20 @@ All notable changes to this project will be documented in this file.
   - Tooltip shows the exact calendar date for each cell
   - Visual editor exposes mode, weeks, and aggregate controls
 - Thanks to @spikeygg for the feature suggestion
+
+### Fixed
+- First-date data loss in hourly mode: the oldest calendar date in the fetched history was always silently dropped. Both `calculate_measurement_values()` and `calculate_increasing_values()` had a `prevDate !== null` guard on the row-creation branch that prevented the first date's row from ever being pushed to the grid. The guard was removed; rows are now pushed immediately on any date transition including the first.
+- Device class picker in the visual editor was broken in recent Home Assistant versions after HA migrated from MWC to MD3 components. Migrated from the deprecated `ha-select` + `mwc-list-item` pair to `ha-selector` with `select` type, matching the same fix applied to the scale picker in v1.0.1.
+- Legend rendering: a stray double-quote in the tick element's inline style attribute (`style="left: X%;"">`) caused the closing `>` to be emitted as text content rather than ending the tag, producing a malformed DOM node.
+- CSS typo in `.tick-container`: `position: relative:` (colon instead of semicolon) caused the rule to be silently dropped, breaking tick label positioning.
+- `key.indexOf('.')` in the editor's root `value-changed` listener was replaced with `key.includes('.')`. The original always evaluated truthy (returning an index, not a boolean), causing all simple keys to be incorrectly treated as dot-notation paths.
+
+### Changed
+- Visual editor: card title field moved to the top of the editor (before Mode)
+- Visual editor: Show legend toggle added to Card elements section
+- Visual editor: min/max range controls refactored into a shared method (was duplicated)
+- License simplified to MIT only (Apache 2.0 dual-license text removed)
+- Full inline documentation added to all methods in `HeatmapCard` and `HeatmapCardEditor`
 
 ## [1.0.2] - 2026-03-31
 

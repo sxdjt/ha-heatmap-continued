@@ -2819,7 +2819,7 @@ window.customCards.push({
     description: "Heat maps of entities or energy data",
 });
 console.info(
-    "%c HEATMAP-CARD %c v1.1.0-beta.2 ",
+    "%c HEATMAP-CARD %c v1.1.0 ",
     "color: black; background: #F2720C; font-weight: 600;",
     "color: black; background: #00a5c9; font-weight: 600;"
 );
