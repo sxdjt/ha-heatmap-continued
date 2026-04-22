@@ -65,6 +65,18 @@ Setting `data.max` to a fixed value (such as your main fuse capacity in kW) keep
 
 <img width="300" alt="Grid energy heatmap" src="images/grid_usage.png">
 
+### Daily Mode Example
+
+```yaml
+type: custom:heatmap-card
+entity: sensor.outdoor_temperature
+mode: daily
+weeks: 12
+aggregate: mean
+```
+
+Daily mode shows one cell per calendar day. Rows are weeks (Monday-Sunday); columns are labeled Mon-Sun using your locale. The `aggregate` option controls which daily statistic is used - `mean` is suitable for most sensors; use `min` or `max` to highlight daily extremes.
+
 ---
 
 ## Configuration
@@ -75,8 +87,11 @@ Setting `data.max` to a fixed value (such as your main fuse capacity in kW) keep
 |--------|------|---------|-------------|
 | `entity` | string | **required** | Entity ID to display |
 | `title` | string | Entity friendly name | Card title |
+| `mode` | string | `hourly` | Heatmap granularity: `hourly` or `daily` |
 | `data` | object | - | Data range configuration (see below) |
-| `days` | number | `21` | Number of days of history to show |
+| `days` | number | `21` | Days of history to show (hourly mode) |
+| `weeks` | number | `12` | Weeks of history to show (daily mode) |
+| `aggregate` | string | `mean` | Daily aggregate statistic: `mean`, `min`, or `max` (daily mode) |
 | `device_class` | string | From entity | Override device class for scale auto-selection |
 | `display` | object | - | Display options (see below) |
 | `scale` | string or object | Auto (by device class) | Built-in scale name or custom scale definition |

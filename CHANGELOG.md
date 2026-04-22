@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0-beta.1] - 2026-04-21
+
+### Added
+- Daily heatmap mode: set `mode: daily` to view day-level aggregates instead of hourly data
+  - `weeks` option controls how many weeks of history to show (default: 12)
+  - `aggregate` option selects the daily statistic: `mean` (default), `min`, or `max`
+  - Rows represent weeks (Monday-Sunday); columns are days of the week with locale-aware labels
+  - Tooltip shows the exact calendar date for each cell
+  - Visual editor exposes mode, weeks, and aggregate controls
+- Thanks to @spikeygg for the feature suggestion
+
 ## [1.0.2] - 2026-03-31
 
 ### Fixed

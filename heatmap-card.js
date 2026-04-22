@@ -1268,14 +1268,27 @@ class HeatmapCard extends LitElement {
         `;
     }
 
-    /* Deal with 24h vs 12h time */
+    /* Deal with 24h vs 12h time for hourly mode, or day-of-week labels for daily mode */
     date_table_headers() {
+        if (this.config.mode === 'daily') {
+            // Use locale-aware short weekday names, starting from Monday (index 1..6, then 0)
+            // Reference date 2024-01-01 is a Monday - used purely for weekday name generation
+            const MONDAY_REFERENCE = new Date(2024, 0, 1);
+            const day_formatter = new Intl.DateTimeFormat(this.meta.language, { weekday: 'short' });
+            const day_headers = [];
+            for (let day_offset = 0; day_offset < 7; day_offset++) {
+                const day_date = new Date(MONDAY_REFERENCE);
+                day_date.setDate(day_date.getDate() + day_offset);
+                day_headers.push(html`<th>${day_formatter.format(day_date)}</th>`);
+            }
+            return day_headers;
+        }
         if (this.myhass.locale.time_format === '12') {
             return html`
                 <th>12<br/>AM</th><th>·</th><th>·</th><th>·</th><th>4<br/>AM</th><th>·</th><th>·</th><th>·</th>
                 <th>8<br/>AM</th><th>·</th><th>·</th><th>·</th><th>12<br/>PM</th><th>·</th><th>·</th><th>·</th>
                 <th>4<br/>PM</th><th>·</th><th>·</th><th>·</th><th>8<br/>PM</th><th>·</th><th>·</th><th>11<br/>PM</th>
-            `            
+            `
         } else {
             return html`
                 <th>00</th><th>·</th><th>·</th><th>·</th><th>04</th><th>·</th><th>·</th><th>·</th>
@@ -1318,10 +1331,6 @@ class HeatmapCard extends LitElement {
         var content = '';
         if (this.selected_element_data) {
             // Todo: See if we can use the precision from the entity here.
-            const date = this.grid[this.selected_element_data.row]?.date;
-            const hr = parseInt(this.selected_element_data.col);
-            var from = new Date('2022-03-20 00:00:00').setHours(hr);
-            var to = new Date('2022-03-20 00:00:00').setHours(hr + 1);
             var rendered_value;
             // selected_val is read via the data-val attribute in the DOM. The way it's set via Lit,
             // null translates into ''.
@@ -1331,11 +1340,30 @@ class HeatmapCard extends LitElement {
                 const val = +(parseFloat(this.selected_element_data.val).toFixed(2));
                 rendered_value = `${val} ${this.meta.scale.unit || this.meta.unit_of_measurement}`;
             }
-            var time_format = new Intl.DateTimeFormat('sv-SE', {'hour': 'numeric', 'minute': 'numeric'});
-            if (this.myhass.locale.time_format == '12') {
-                time_format = new Intl.DateTimeFormat('en-US', {'hour': 'numeric'});
+
+            if (this.config.mode === 'daily') {
+                // In daily mode, compute the exact calendar date from week row + day column.
+                // row.nativeDate is the Monday of that week; col is 0 (Mon) through 6 (Sun).
+                const weekMonday = this.grid[this.selected_element_data.row]?.nativeDate;
+                const col = parseInt(this.selected_element_data.col);
+                const cellDate = new Date(weekMonday);
+                cellDate.setDate(cellDate.getDate() + col);
+                const date_label = cellDate.toLocaleDateString(
+                    this.meta.language,
+                    { weekday: 'short', month: 'short', day: '2-digit' }
+                );
+                content = html`<div class="meta">${date_label}</div><div class="value">${rendered_value}</div>`;
+            } else {
+                const date = this.grid[this.selected_element_data.row]?.date;
+                const hr = parseInt(this.selected_element_data.col);
+                var from = new Date('2022-03-20 00:00:00').setHours(hr);
+                var to = new Date('2022-03-20 00:00:00').setHours(hr + 1);
+                var time_format = new Intl.DateTimeFormat('sv-SE', {'hour': 'numeric', 'minute': 'numeric'});
+                if (this.myhass.locale.time_format == '12') {
+                    time_format = new Intl.DateTimeFormat('en-US', {'hour': 'numeric'});
+                }
+                content = html`<div class="meta">${date} ${time_format.format(from)} - ${time_format.format(to)}</div><div class="value">${rendered_value}</div>`;
             }
-            content = html`<div class="meta">${date} ${time_format.format(from)} - ${time_format.format(to)}</div><div class="value">${rendered_value}</div>`;
         }
         return html`
             <div id="tooltip" class="${this.tooltipOpen ? 'active' : 'hidden'}">${content}</div>
@@ -1414,7 +1442,11 @@ class HeatmapCard extends LitElement {
         this.myhass = hass;
         this.meta = this.populate_meta(hass);
         var consumers = [this.config.entity];
-        this.get_recorder(consumers, this.config.days);
+        if (this.config.mode === 'daily') {
+            this.get_recorder_daily(consumers, this.config.weeks);
+        } else {
+            this.get_recorder(consumers, this.config.days);
+        }
         
         this.last_render_ts = Date.now();
     }
@@ -1481,6 +1513,103 @@ class HeatmapCard extends LitElement {
                 this.meta.data.min = this.min_from(this.grid)
             }
         });
+    }
+
+    /*
+        Fetch daily statistics for the daily heatmap mode. Requests `period: day`
+        from the Statistics API instead of `period: hour`. Only measurement entities
+        are supported (total_increasing is not meaningful at day granularity here).
+    */
+    get_recorder_daily(consumers, weeks) {
+        const now = new Date();
+        this.grid_status = undefined;
+
+        // Wind back to the most recent Monday, then go back (weeks * 7) more days.
+        // This ensures the grid starts cleanly on a Monday.
+        const day_of_week = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+        // Days since last Monday (Sunday counts as 6 days back)
+        const days_since_monday = (day_of_week === 0) ? 6 : (day_of_week - 1);
+        var startTime = new Date(now);
+        startTime.setDate(startTime.getDate() - days_since_monday - (weeks * 7));
+        startTime.setHours(0, 0, 0, 0);
+
+        this.myhass.callWS({
+            'type': 'recorder/statistics_during_period',
+            'statistic_ids': consumers,
+            'period': 'day',
+            'units': {
+                'energy': 'kWh',
+                'temperature': this.myhass.config.unit_system.temperature
+            },
+            'start_time': startTime.toISOString(),
+            'types': ['mean', 'min', 'max']
+        }).then(recorderResponse => {
+            for (const consumer of consumers) {
+                const consumerData = recorderResponse[consumer];
+                if (consumerData === undefined) {
+                    this.grid = [];
+                    this.grid_status = this.myhass.localize('ui.components.data-table.no-data');
+                    continue;
+                }
+                this.grid = this.calculate_daily_values(consumerData);
+            }
+            if (this.config.data.max === undefined || this.config.data.max === 'auto') {
+                this.meta.data.max = this.max_from(this.grid);
+            }
+            if (this.config.data.min === undefined || this.config.data.min === 'auto') {
+                this.meta.data.min = this.min_from(this.grid);
+            }
+        });
+    }
+
+    /*
+        Build the daily grid from Statistics API `period: day` data.
+
+        Each row in the grid represents one week (Mon-Sun). Each row has 7 slots,
+        one per day. The value for each slot is taken from `entry[aggregate]` where
+        aggregate is the user-configured 'mean', 'min', or 'max'.
+
+        Days that fall in the future (i.e. the current partial week) are left as null.
+
+        Returns rows in reverse-chronological order (most recent week first), matching
+        the hourly mode layout.
+    */
+    calculate_daily_values(consumerData) {
+        const aggregate = this.config.aggregate; // 'mean', 'min', or 'max'
+        // DAYS_PER_WEEK: number of columns in the daily grid
+        const DAYS_PER_WEEK = 7;
+        var grid = [];
+        var weekSlots = null;
+        var currentWeekMonday = null;
+
+        for (const entry of consumerData) {
+            const entryDate = new Date(entry.start);
+
+            // Determine the Monday of the week this entry belongs to.
+            const dow = entryDate.getDay(); // 0 = Sunday
+            const daysFromMonday = (dow === 0) ? 6 : (dow - 1);
+            const monday = new Date(entryDate);
+            monday.setDate(monday.getDate() - daysFromMonday);
+            monday.setHours(0, 0, 0, 0);
+            const mondayKey = monday.toISOString();
+
+            // When we cross into a new week, start a new row.
+            if (mondayKey !== currentWeekMonday) {
+                weekSlots = Array(DAYS_PER_WEEK).fill(null);
+                const weekLabel = monday.toLocaleDateString(
+                    this.meta.language,
+                    { month: 'short', day: '2-digit' }
+                );
+                grid.push({ 'date': weekLabel, 'nativeDate': monday, 'vals': weekSlots });
+                currentWeekMonday = mondayKey;
+            }
+
+            // Slot index 0 = Monday, 6 = Sunday
+            const slotIndex = daysFromMonday;
+            weekSlots[slotIndex] = entry[aggregate] ?? null;
+        }
+
+        return grid.reverse();
     }
 
     max_from(grid) {
@@ -1604,33 +1733,48 @@ class HeatmapCard extends LitElement {
         if (config.days && config.days <= 0) {
             throw new Error("`days` need to be 1 or higher");
         }
+        if (config.weeks && config.weeks <= 0) {
+            throw new Error("`weeks` need to be 1 or higher");
+        }
+        if (config.mode && !['hourly', 'daily'].includes(config.mode)) {
+            throw new Error("`mode` must be 'hourly' or 'daily'");
+        }
+        if (config.aggregate && !['mean', 'min', 'max'].includes(config.aggregate)) {
+            throw new Error("`aggregate` must be 'mean', 'min', or 'max'");
+        }
         this.config = {
             'title': config.title,
+            'mode': (config.mode ?? 'hourly'),
             'days': (config.days ?? 21),
+            'weeks': (config.weeks ?? 12),
+            'aggregate': (config.aggregate ?? 'mean'),
             'entity': config.entity,
             'scale': config.scale,
             'data': (config.data ?? {}),
             'display': (config.display ?? {})
         };
-        if (this.config.data.max !== undefined && 
-            (this.config.data.max !== 'auto' && 
+        if (this.config.data.max !== undefined &&
+            (this.config.data.max !== 'auto' &&
             typeof(this.config.data.max) !== 'number')
         ) {
             throw new Error("`data.max` need to be either `auto` or a number");
         }
-        if (this.config.data.min !== undefined && 
-            (this.config.data.min !== 'auto' && 
+        if (this.config.data.min !== undefined &&
+            (this.config.data.min !== 'auto' &&
             typeof(this.config.data.min) !== 'number')
         ) {
             throw new Error("`data.min` need to be either `auto` or a number");
         }
-        
+
         this.last_render_ts = 0;
     }
   
     // The height of your card. Home Assistant uses this to automatically
     // distribute all cards over the available columns.
     getCardSize() {
+        if (this.config.mode === 'daily') {
+            return (1 + Math.ceil(this.config.weeks / 3));
+        }
         if (!this.config.days) {
             return 1;
         } else {
@@ -2223,6 +2367,21 @@ class HeatmapCardEditor extends LitElement {
     render() {
         if (this.myhass === undefined || this._config === undefined) { return; }
 
+        const is_daily = (this._config.mode === 'daily');
+
+        // Mode selector options
+        const mode_options = [
+            { value: 'hourly', label: 'Hourly (default)' },
+            { value: 'daily',  label: 'Daily' }
+        ];
+
+        // Aggregate selector options (only relevant in daily mode)
+        const aggregate_options = [
+            { value: 'mean', label: 'Mean (average)' },
+            { value: 'min',  label: 'Minimum' },
+            { value: 'max',  label: 'Maximum' }
+        ];
+
         return html`
         <div class="root card-config">
             <ha-entity-picker
@@ -2234,16 +2393,43 @@ class HeatmapCardEditor extends LitElement {
             ></ha-entity-picker>
             ${this.render_entity_warning()}
             ${this.render_device_class_picker()}
-            <ha-textfield
-                .label=${"Days"}
-                .placeholder=${21}
-                .type=${"number"}
-                .value=${this._config.days}
-                .configValue=${"days"}
-                @input=${this.update_field}
-                .helper=${"Days of data to include in the heatmap. Defaults to 21"}
-                .helperPersistent=${true}
-            ></ha-textfield>
+            <ha-selector
+                .hass=${this.myhass}
+                .label=${"Mode"}
+                .selector=${{select: {options: mode_options}}}
+                .value=${this._config.mode ?? 'hourly'}
+                .configValue=${"mode"}
+            ></ha-selector>
+            ${is_daily ? html`
+                <ha-textfield
+                    .label=${"Weeks"}
+                    .placeholder=${12}
+                    .type=${"number"}
+                    .value=${this._config.weeks ?? 12}
+                    .configValue=${"weeks"}
+                    @input=${this.update_field}
+                    .helper=${"Weeks of data to include in the heatmap. Defaults to 12"}
+                    .helperPersistent=${true}
+                ></ha-textfield>
+                <ha-selector
+                    .hass=${this.myhass}
+                    .label=${"Aggregate"}
+                    .selector=${{select: {options: aggregate_options}}}
+                    .value=${this._config.aggregate ?? 'mean'}
+                    .configValue=${"aggregate"}
+                ></ha-selector>
+            ` : html`
+                <ha-textfield
+                    .label=${"Days"}
+                    .placeholder=${21}
+                    .type=${"number"}
+                    .value=${this._config.days ?? 21}
+                    .configValue=${"days"}
+                    @input=${this.update_field}
+                    .helper=${"Days of data to include in the heatmap. Defaults to 21"}
+                    .helperPersistent=${true}
+                ></ha-textfield>
+            `}
             ${this.render_scale_picker()}
             <h3>Card elements</h3>
             <ha-textfield
@@ -2428,7 +2614,7 @@ window.customCards.push({
     description: "Heat maps of entities or energy data",
 });
 console.info(
-    "%c HEATMAP-CARD %c v1.0.2 ",
+    "%c HEATMAP-CARD %c v1.1.0-beta.1 ",
     "color: black; background: #F2720C; font-weight: 600;",
     "color: black; background: #00a5c9; font-weight: 600;"
 );
