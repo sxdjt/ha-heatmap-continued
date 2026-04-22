@@ -993,6 +993,16 @@ const BUILTIN_SCALES = [
 /* ------------------------------------------------------------------------- */
 /* Home Assistant device class mappings                                      */
 /* ------------------------------------------------------------------------- */
+/*
+    Maps every HA sensor device_class to optional metadata used by HeatmapScales:
+      - default:      the built-in scale key to use when no scale is explicitly configured
+      - unit_system:  the key in hass.config.unit_system whose value identifies the
+                      display unit (e.g. "temperature" -> unit_system.temperature = "°F").
+                      Only present for device classes where HA performs unit conversion.
+
+    An empty object means the device class is valid for use with the card but has no
+    default scale and no unit-system mapping (falls back to the global default: iron red).
+*/
 const DEVICE_CLASSES = {
     "apparent_power": {},
     "atmospheric_pressure": {},
@@ -1032,8 +1042,12 @@ const DEVICE_CLASSES = {
 /* HeatmapScales - scale management and color generation                     */
 /* ------------------------------------------------------------------------- */
 /*
-    Laying off pressure conversion for now, it gets messy quickly. See comment
-    in heatmap-card, get_recorder().
+    Unit conversion functions, keyed as conversions[unit_system_domain][from_unit][to_unit].
+    Only temperature is handled for now. Pressure is intentionally omitted - see the
+    comment in get_recorder() for why that is messier than it looks.
+
+    Each leaf value is a function (val) -> converted_val applied to every step value
+    in a scale when the user's display unit differs from the scale's authored unit.
 */
 const conversions = {
     'temperature': {
@@ -1047,15 +1061,22 @@ const conversions = {
 }
 
 /*
-    Handles scale management.
+    Manages the built-in color scales and generates ready-to-use scale objects.
 
-    - scales.json are generated from the scales/*.yaml files.
-    - get_scale() is your typical entrypoint.
-    - get_by() to find scales matching an attribute, typically type or device_class.
-    - defaults_for() to find the default scale for a given device_class.
+    Typical call sequence:
+      1. defaults_for(device_class) - find the right scale key for an entity
+      2. get_scale(key, device_class, unit_system) - build the renderable scale object
+      3. Use scale.gradient(value) to get a chroma color for a data point
+         and scale.css to render the legend bar.
+
+    Built-in scale definitions live in BUILTIN_SCALES (generated from scales/*.yaml).
+    Custom scales can be passed as plain objects with the same shape.
 */
 class HeatmapScales {
-    // Expects the unit_system object from hass frontend
+    /*
+        Indexes BUILTIN_SCALES by key for O(1) lookup in get_scale().
+        The default_scale is the fallback used when no device_class match exists.
+    */
     constructor() {
         this.default_scale = 'iron red';
         this.scale_by_key = {};
@@ -1226,6 +1247,17 @@ class HeatmapCard extends LitElement {
         };
     }
 
+    /*
+        Main LitElement render function. Produces the full card HTML including the
+        heatmap table, status message, legend, and tooltip overlay.
+
+        The table is built from this.grid: each row is a date (or week in daily mode),
+        each cell is a data slot. Cell color is resolved via the chroma gradient at
+        render time rather than stored on the grid, so a scale change re-colors
+        immediately without re-fetching data.
+
+        Called by Lit whenever a tracked property changes (grid, meta, tooltipOpen, etc.).
+    */
     render() {
         // We may be trying to render before we've received the recorder data.
         if (this.grid === undefined) { this.grid = []; }
@@ -1268,7 +1300,16 @@ class HeatmapCard extends LitElement {
         `;
     }
 
-    /* Deal with 24h vs 12h time for hourly mode, or day-of-week labels for daily mode */
+    /*
+        Returns the <th> header cells for the column axis of the heatmap table.
+
+        In hourly mode: 24 columns representing hours 0-23. Labels are shown at
+        0, 4, 8, 12, 16, 20 and the last hour, with dots for the unlabelled columns.
+        Format follows hass.locale.time_format: 12h (12 AM / 4 AM ...) or 24h (00 / 04 ...).
+
+        In daily mode: 7 columns representing Mon-Sun. Labels use the locale short
+        weekday name derived from a fixed Monday reference date (2024-01-01).
+    */
     date_table_headers() {
         if (this.config.mode === 'daily') {
             // Use locale-aware short weekday names, starting from Monday (index 1..6, then 0)
@@ -1298,12 +1339,29 @@ class HeatmapCard extends LitElement {
         }
     }
 
+    /*
+        Renders a status message when this.grid_status is set (e.g. "No data").
+        Returns nothing when the grid has loaded successfully.
+    */
     render_status() {
         if (this.grid_status) {
             return html`<h3>${this.grid_status}</h3>`
         }
     }
 
+    /*
+        Renders the color scale legend bar and its tick labels below the heatmap.
+        Hidden when config.display.legend is explicitly false.
+
+        The legend is a gradient div whose background CSS is set inline (Lit's CSS
+        templating doesn't cleanly handle dynamic linear-gradient values).
+        Tick positions and labels come from legend_scale(). Labels are rotated 90
+        degrees via CSS; a hidden "shadow" copy of each label provides height so
+        the container sizes correctly despite the absolute-positioned ticks.
+
+        The decimals option (config.display.decimals) fixes the number of decimal
+        places on tick labels; omitting it lets the raw data value render as-is.
+    */
     render_legend() {
         if (this.config.display.legend === false) {
             return;
@@ -1317,7 +1375,7 @@ class HeatmapCard extends LitElement {
                 <div id="legend" style="background: linear-gradient(90deg, ${this.meta.scale.css})"></div>
                 <div class="tick-container">
                     ${ticks.map((tick) => html`
-                        <div class="legend-tick" style="left: ${tick[0]}%;"">
+                        <div class="legend-tick" style="left: ${tick[0]}%;">
                             <div class="caption">${fmt(tick[1])} ${this.meta.scale.unit}</div>
                         </div>
                         <span class="legend-shadow">${fmt(tick[1])} ${this.meta.scale.unit}</span>`
@@ -1327,6 +1385,20 @@ class HeatmapCard extends LitElement {
         `
     }
 
+    /*
+        Renders the click-to-show tooltip overlay.
+
+        The tooltip is always present in the DOM (display:none when inactive) to avoid
+        layout thrash on each click. Content is built from this.selected_element_data,
+        which is populated by toggle_tooltip() from the clicked cell's data-* attributes.
+
+        In hourly mode: shows the date and the one-hour time window (e.g. "Mar 20 14:00 - 15:00").
+        In daily mode: reconstructs the exact calendar date from the week row's nativeDate
+        plus the column index (0=Mon .. 6=Sun), then formats it with the locale.
+
+        The value is formatted to 2 decimal places. If the cell has no data (null, rendered
+        as '' in the DOM) it shows the HA "No data" localised string instead.
+    */
     render_tooltip() {
         var content = '';
         if (this.selected_element_data) {
@@ -1370,6 +1442,15 @@ class HeatmapCard extends LitElement {
         `
     }
 
+    /*
+        Compute legend tick positions and labels for the given scale.
+
+        Returns an array of [position_percent, label_value] pairs. For relative scales, five
+        evenly-spaced ticks are generated between data.min and data.max. For absolute scales,
+        each scale step becomes a tick, positioned proportionally within the step value range.
+
+        NOTE: Tick spacing could be improved to snap to human-friendly values (integers, 0.5, etc).
+    */
     legend_scale(scale) {
         /*
             Figure out how to space the markings in the legend. There's some room for improvement
@@ -1402,7 +1483,21 @@ class HeatmapCard extends LitElement {
         return ticks;
     }
 
-    /* Todo: research precision in data, how to use (abs. temp) */
+    /*
+        Click handler for heatmap cells. Toggles the tooltip on/off.
+
+        Clicking an already-selected cell closes the tooltip. Clicking a different cell
+        moves the selection. The selected cell is identified by id="selected" in the DOM
+        so that CSS can outline it.
+
+        Tooltip position is computed relative to the card element so it stays within the
+        card bounds regardless of where the card sits on the page. The tooltip is offset
+        upward and to the left of the cell; this is approximate and does not yet account
+        for proximity to card edges.
+
+        this.selected_element_data is set to the clicked cell's dataset (data-val,
+        data-row, data-col) which render_tooltip() reads to build the label.
+    */
     toggle_tooltip(e) {
         const oldSelection = this.renderRoot.querySelector("#selected");
         const card = this.renderRoot.querySelector("#card");
@@ -1435,6 +1530,12 @@ class HeatmapCard extends LitElement {
         Whenever the state changes, a new `hass` object is set. We fetch some metadata
         the first time over but generally don't want to update frequently.
     */
+    /*
+        Called by Home Assistant whenever the hass object changes (frequently).
+        Throttles data fetches to at most once per 10 minutes to avoid hammering
+        the statistics API. On each fetch, rebuilds meta from the current hass state
+        then dispatches to either get_recorder() (hourly) or get_recorder_daily() (daily).
+    */
     set hass(hass) {
         if (Date.now() - this.last_render_ts < 10 * 60 * 1000) {
             return;
@@ -1447,7 +1548,7 @@ class HeatmapCard extends LitElement {
         } else {
             this.get_recorder(consumers, this.config.days);
         }
-        
+
         this.last_render_ts = Date.now();
     }
 
@@ -1612,6 +1713,10 @@ class HeatmapCard extends LitElement {
         return grid.reverse();
     }
 
+    /*
+        Return the maximum non-null value across all rows and slots in the grid.
+        Nulls are excluded because Math.max() coerces null to 0, which skews the result.
+    */
     max_from(grid) {
         var vals = [];
         for (const entry of grid) {
@@ -1621,6 +1726,10 @@ class HeatmapCard extends LitElement {
         return Math.max(...vals.filter(v => v !== null));
     }
 
+    /*
+        Return the minimum non-null value across all rows and slots in the grid.
+        Nulls are excluded because Math.min() coerces null to 0, which skews the result.
+    */
     min_from(grid) {
         var vals = [];
         for (const entry of grid) {
@@ -1630,74 +1739,95 @@ class HeatmapCard extends LitElement {
         return Math.min(...vals.filter(v => v !== null));
     }
 
-    // Todo: cleanup and comment.
+    /*
+        Build hourly grid rows from Statistics API `period: hour` data for measurement entities.
+        Each row represents one calendar date; each of the 24 slots holds the mean for that hour.
+        The last row is truncated to the last received hour (strips future hours for today).
+        Rows are returned in reverse-chronological order (most recent date first).
+    */
     calculate_measurement_values(consumerData) {
         var grid = [];
-        var gridTemp = [];
+        var gridTemp = null;
         var prevDate = null;
-        var hour;
+        var hour = 0;
         for (const entry of consumerData) {
             const start = new Date(entry.start);
             hour = start.getHours();
             const dateRep = start.toLocaleDateString(this.meta.language, {month: 'short', day: '2-digit'});
 
-            if (dateRep !== prevDate && prevDate !== null) {
+            if (dateRep !== prevDate) {
+                // New calendar date: start a fresh row and push it immediately.
+                // Previously this checked prevDate !== null, which silently dropped the first date's data.
                 gridTemp = Array(24).fill(null);
                 grid.push({'date': dateRep, 'nativeDate': start, 'vals': gridTemp});
+                prevDate = dateRep;
             }
             gridTemp[hour] = entry.mean;
-            prevDate = dateRep;
         }
         /*
             For the last date in the series, remove any entries that we didn't get from
             Home Assistant. This would typically be hours set in the future.
         */
-        gridTemp.splice(hour + 1);
+        if (gridTemp) { gridTemp.splice(hour + 1); }
         return grid.reverse();
     }
 
-    // Todo: cleanup and comment.
     /*
-        Notable difference vs. calculate_measurement_values() - we fill missing values with 0 rather
-        than null. For measurement values, we want to highlight gaps. For total_increasing ones, gaps
-        are common with PV inverters, and it makes more sense to show this as 0 rather than potentially
-        a lot of gaps in the graph that are really zero values.
+        Build hourly grid rows from Statistics API `period: hour` data for total_increasing entities
+        (e.g. energy usage, PV generation). Each slot holds the delta (sum[n] - sum[n-1]) for that hour.
 
-        While this is something that the inverter integrations should be handling, it's an imperfect
-        world.
+        Notable difference vs. calculate_measurement_values(): missing slots are filled with 0 rather
+        than null. Gaps are common with PV inverters during off-hours, and showing 0 is more accurate
+        than showing a gap. The first hour of the first day is always 0 since there is no prior sum to
+        diff against.
 
-        Will likely make this configurable at some point.
+        Rows are returned in reverse-chronological order (most recent date first).
     */
     calculate_increasing_values(consumerData) {
         var grid = [];
-        var prev = null;
-        var gridTemp = [];
-        var prevDate = null; 
-        var hour;
+        var prev_sum = null;
+        var gridTemp = null;
+        var prevDate = null;
+        var hour = 0;
         for (const entry of consumerData) {
             const start = new Date(entry.start);
             hour = start.getHours();
             const dateRep = start.toLocaleDateString(this.meta.language, {month: 'short', day: '2-digit'});
 
-            if (dateRep !== prevDate && prev !== null) {
+            if (dateRep !== prevDate) {
+                // New calendar date: start a fresh row and push it immediately.
+                // Previously this checked prev !== null, which silently dropped the first date's data.
                 gridTemp = Array(24).fill(0);
                 grid.push({'date': dateRep, 'nativeDate': start, 'vals': gridTemp});
+                prevDate = dateRep;
             }
-            if (prev !== null) {
-                var util = (entry.sum - prev).toFixed(2);
-                gridTemp[hour] = util
+            if (prev_sum !== null) {
+                // Compute hourly delta from the running total. First entry has no prior sum, stays 0.
+                gridTemp[hour] = parseFloat((entry.sum - prev_sum).toFixed(2));
             }
-            prev = entry.sum;
-            prevDate = dateRep;
+            prev_sum = entry.sum;
         }
         /*
             For the last date in the series, remove any entries that we didn't get from
             Home Assistant. This would typically be hours set in the future.
         */
-        gridTemp.splice(hour + 1);
+        if (gridTemp) { gridTemp.splice(hour + 1); }
         return grid.reverse();
     }
 
+    /*
+        Builds the meta object from the current hass state and card config.
+        Called on every data refresh (from set hass()) before fetching recorder data.
+
+        meta holds:
+          - unit_of_measurement, state_class, device_class: from the entity attributes
+            (device_class can be overridden via config.device_class)
+          - language: resolved from hass for locale-aware date formatting
+          - scale: the fully rendered scale object (gradient + css + steps + unit)
+          - title: from config, or null to suppress the header, or friendly_name as fallback
+          - data.min/max: from config (may be a number or 'auto'/undefined; auto values
+            are overwritten after the recorder response arrives)
+    */
     populate_meta(hass) {
         const consumerAttributes = hass.states[this.config.entity].attributes;
         const device_class = (consumerAttributes.device_class ?? this.config.device_class);
@@ -1840,7 +1970,7 @@ class HeatmapCard extends LitElement {
 
             }
             .tick-container {
-                position: relative:
+                position: relative;
                 left: -10px;
             }
             #legend {
@@ -1992,10 +2122,20 @@ class HeatmapCardEditor extends LitElement {
         };
     }
 
+    /*
+        Store the hass object for use in child elements (entity picker, ha-selector).
+        Unlike the main card, the editor does not trigger data fetches from hass updates.
+    */
     set hass(hass) {
         this.myhass = hass;
     }
 
+    /*
+        Called by HA whenever the config is updated (including immediately after the editor
+        is first opened). Pre-loads the ha-entity-picker element if it is not already
+        registered, then resolves entity, device_class, and scale reactive properties so
+        the render() method has what it needs.
+    */
     async setConfig(config) {
         this._config = config;
         // Ensure that the entity picker element is available to us before we render.
@@ -2011,43 +2151,77 @@ class HeatmapCardEditor extends LitElement {
         this.scale = this.scales.get_scale(this._config.scale)
     }
 
-    /* We'll only display this element if the entity doesn't present a device_class */
+    /*
+        Only shown when the entity does not expose a device_class attribute of its own.
+        Uses ha-selector (MD3) instead of the deprecated ha-select + mwc-list-item.
+        The root value-changed listener in createRenderRoot() handles the config update,
+        including setting the default scale for the chosen device class.
+    */
     render_device_class_picker() {
-        const dc_list = Object.keys(DEVICE_CLASSES).map(function(dc) {
-            return {
-                'label': dc,
-                'value': dc
-            }
-        })
-        if (this.entity && !(this.entity.attributes.device_class)) {
-            return html`
-                <ha-select
-                    label="Device class"
-                    .value=${this._config.device_class ?? ""}
-                    @selected=${(e) => {
-                        e.stopPropagation();
-                        const val = e.target.value;
-                        if (!val) { return; }
-                        const config = JSON.parse(JSON.stringify(this._config));
-                        config['scale'] = this.scales.defaults_for(val);
-                        config['device_class'] = val;
-                        const event = new Event('config-changed');
-                        event.detail = {'config': config};
-                        this.dispatchEvent(event);
-                    }}
-                    @closed=${(e) => e.stopPropagation()}
-                    fixedMenuPosition
-                    naturalMenuWidth
-                    helper="What device_class best represents this entity?"
-                >
-                    ${dc_list.map(dc => html`
-                        <mwc-list-item .value=${dc.value}>${dc.label}</mwc-list-item>
-                    `)}
-                </ha-select>
-            `
-        }
+        if (!this.entity || this.entity.attributes.device_class) { return; }
+
+        const dc_options = Object.keys(DEVICE_CLASSES).map(dc => ({ value: dc, label: dc }));
+        return html`
+            <ha-selector
+                .hass=${this.myhass}
+                .label=${"Device class"}
+                .selector=${{select: {options: dc_options}}}
+                .value=${this._config.device_class ?? ''}
+                .configValue=${"device_class"}
+                helper="What device_class best represents this entity?"
+            ></ha-selector>
+        `;
     }
 
+    /*
+        Min/max range controls, shared by both the built-in relative scale picker and the
+        custom relative scale editor. Each field has a checkbox to let HA infer the value
+        automatically from the data instead.
+    */
+    render_range_controls() {
+        return html`
+            <h3>Range</h3>
+            <div>
+                <ha-textfield
+                    .label=${"Minimum value"}
+                    .value=${this._config.data?.min ?? 'auto'}
+                    .placeholder=0
+                    .disabled=${this._config.data?.min === 'auto' || this._config.data?.min === undefined}
+                    .configValue=${"data.min"}
+                    @input=${this.update_field}
+                ></ha-textfield>
+                <ha-formfield .label=${"Infer from the sensor data"} @change=${this.update_field}>
+                    <ha-checkbox
+                        .checked=${this._config.data?.min === 'auto' || this._config.data?.min === undefined}
+                        .value=${"auto"}
+                        .configValue=${"data.min"}
+                    ></ha-checkbox>
+                </ha-formfield>
+            </div>
+            <div>
+                <ha-textfield
+                    .label=${"Maximum value"}
+                    .value=${this._config.data?.max ?? 'auto'}
+                    .disabled=${this._config.data?.max === 'auto' || this._config.data?.max === undefined}
+                    .configValue=${"data.max"}
+                    @input=${this.update_field}
+                ></ha-textfield>
+                <ha-formfield .label=${"Infer from the sensor data"} @change=${this.update_field}>
+                    <ha-checkbox
+                        .checked=${this._config.data?.max === 'auto' || this._config.data?.max === undefined}
+                        .value=${"auto"}
+                        .configValue=${"data.max"}
+                    ></ha-checkbox>
+                </ha-formfield>
+            </div>
+        `;
+    }
+
+    /*
+        Render optional documentation and license information for the selected built-in scale.
+        Returns nothing if the current scale has no docs block. Scale docs are authored in
+        HeatmapScales and may include a free-text description and/or a license block.
+    */
     render_scale_docs() {
         if (this.scale === undefined || this.scale.docs === undefined) { return }
         var license_block;
@@ -2100,42 +2274,7 @@ class HeatmapCardEditor extends LitElement {
         // Range controls only apply to relative scales (absolute scales have built-in fixed steps)
         var range_section = '';
         if (this.scale?.type === 'relative') {
-            range_section = html`
-                <h3>Range</h3>
-                <div>
-                    <ha-textfield
-                        .label=${"Minimum value"}
-                        .value=${this._config.data?.min ?? 'auto'}
-                        .placeholder=0
-                        .disabled=${this._config.data?.min === 'auto' || this._config.data?.min === undefined}
-                        .configValue=${"data.min"}
-                        @input=${this.update_field}
-                    ></ha-textfield>
-                    <ha-formfield .label=${"Infer from the sensor data"} @change=${this.update_field}>
-                        <ha-checkbox
-                            .checked=${this._config.data?.min === 'auto' || this._config.data?.min === undefined}
-                            .value=${"auto"}
-                            .configValue=${"data.min"}
-                        ></ha-checkbox>
-                    </ha-formfield>
-                </div>
-                <div>
-                    <ha-textfield
-                        .label=${"Maximum value"}
-                        .value=${this._config.data?.max ?? 'auto'}
-                        .disabled=${this._config.data?.max === 'auto' || this._config.data?.max === undefined}
-                        .configValue=${"data.max"}
-                        @input=${this.update_field}
-                    ></ha-textfield>
-                    <ha-formfield .label=${"Infer from the sensor data"} @change=${this.update_field}>
-                        <ha-checkbox
-                            .checked=${this._config.data?.max === 'auto' || this._config.data?.max === undefined}
-                            .value=${"auto"}
-                            .configValue=${"data.max"}
-                        ></ha-checkbox>
-                    </ha-formfield>
-                </div>
-            `;
+            range_section = this.render_range_controls();
         }
 
         return html`
@@ -2158,6 +2297,17 @@ class HeatmapCardEditor extends LitElement {
         `;
     }
 
+    /*
+        Render the custom threshold editor, shown when config.scale is an object (not a string key).
+        Allows the user to:
+          - Switch between absolute (fixed value steps) and relative (auto-range) scale types
+          - Add/remove color steps
+          - Set colors via a native color picker; set values via ha-textfield (absolute only)
+        Includes a "Back to preset scales" link that calls _reset_to_builtin().
+
+        NOTE: The type selector here still uses the deprecated ha-select + mwc-list-item pair.
+        This is a known issue; it should be migrated to ha-selector when time permits.
+    */
     render_custom_scale_editor() {
         const scale = this._config.scale;
         const steps = scale.steps || [];
@@ -2166,42 +2316,7 @@ class HeatmapCardEditor extends LitElement {
         // Range controls for auto-range (relative) custom scales
         var range_section = '';
         if (!is_absolute) {
-            range_section = html`
-                <h4>Data range</h4>
-                <div>
-                    <ha-textfield
-                        .label=${"Minimum value"}
-                        .value=${this._config.data?.min ?? 'auto'}
-                        .placeholder=0
-                        .disabled=${this._config.data?.min === 'auto' || this._config.data?.min === undefined}
-                        .configValue=${"data.min"}
-                        @input=${this.update_field}
-                    ></ha-textfield>
-                    <ha-formfield .label=${"Infer from sensor data"} @change=${this.update_field}>
-                        <ha-checkbox
-                            .checked=${this._config.data?.min === 'auto' || this._config.data?.min === undefined}
-                            .value=${"auto"}
-                            .configValue=${"data.min"}
-                        ></ha-checkbox>
-                    </ha-formfield>
-                </div>
-                <div>
-                    <ha-textfield
-                        .label=${"Maximum value"}
-                        .value=${this._config.data?.max ?? 'auto'}
-                        .disabled=${this._config.data?.max === 'auto' || this._config.data?.max === undefined}
-                        .configValue=${"data.max"}
-                        @input=${this.update_field}
-                    ></ha-textfield>
-                    <ha-formfield .label=${"Infer from sensor data"} @change=${this.update_field}>
-                        <ha-checkbox
-                            .checked=${this._config.data?.max === 'auto' || this._config.data?.max === undefined}
-                            .value=${"auto"}
-                            .configValue=${"data.max"}
-                        ></ha-checkbox>
-                    </ha-formfield>
-                </div>
-            `;
+            range_section = this.render_range_controls();
         }
 
         return html`
@@ -2255,12 +2370,21 @@ class HeatmapCardEditor extends LitElement {
         `;
     }
 
+    /*
+        Fire the 'config-changed' event that HA listens for to update and persist the card config.
+        All editor mutations should go through this method rather than directly dispatching events.
+    */
     _dispatch_config(config) {
         const event = new Event('config-changed');
         event.detail = {'config': config};
         this.dispatchEvent(event);
     }
 
+    /*
+        Switch from a built-in scale to a custom absolute scale with three default steps.
+        Called when the user clicks "Use custom thresholds". Pre-populates with a simple
+        green-yellow-red gradient anchored at 0 / 50 / 100.
+    */
     _switch_to_custom() {
         const config = JSON.parse(JSON.stringify(this._config));
         config.scale = {
@@ -2275,6 +2399,11 @@ class HeatmapCardEditor extends LitElement {
         this._dispatch_config(config);
     }
 
+    /*
+        Revert from a custom scale back to the built-in default for the current device class.
+        Also clears any manual data.min/max overrides that were set while in custom mode.
+        Called when the user clicks "Back to preset scales".
+    */
     _reset_to_builtin() {
         const config = JSON.parse(JSON.stringify(this._config));
         config.scale = this.scales.defaults_for(this.device_class);
@@ -2282,6 +2411,10 @@ class HeatmapCardEditor extends LitElement {
         this._dispatch_config(config);
     }
 
+    /*
+        Append a new empty step to the custom scale. For relative scales the step has
+        only a color; for absolute scales a default value of 0 is also added.
+    */
     _add_step() {
         const config = JSON.parse(JSON.stringify(this._config));
         const steps = config.scale.steps || [];
@@ -2293,24 +2426,43 @@ class HeatmapCardEditor extends LitElement {
         this._dispatch_config(config);
     }
 
+    /*
+        Remove the step at the given index from the custom scale.
+        The remove button is disabled in the template when fewer than 2 steps remain,
+        so a minimum of 2 steps is enforced without needing a guard here.
+    */
     _remove_step(index) {
         const config = JSON.parse(JSON.stringify(this._config));
         config.scale.steps.splice(index, 1);
         this._dispatch_config(config);
     }
 
+    /*
+        Update the color hex string for the step at the given index.
+        Called on 'change' from the native <input type="color"> in the step row.
+    */
     _update_step_color(index, color) {
         const config = JSON.parse(JSON.stringify(this._config));
         config.scale.steps[index].color = color;
         this._dispatch_config(config);
     }
 
+    /*
+        Update the numeric value for the step at the given index (absolute scales only).
+        Called on 'change' from the ha-textfield in the step row.
+    */
     _update_step_value(index, value) {
         const config = JSON.parse(JSON.stringify(this._config));
         config.scale.steps[index].value = parseFloat(value);
         this._dispatch_config(config);
     }
 
+    /*
+        Handle a change in custom scale type (absolute <-> relative).
+        When switching to relative: strip the value fields from all steps, keeping only colors.
+        When switching to absolute: assign evenly-spaced default values based on step count (0..100).
+        Stops propagation so the root value-changed handler in createRenderRoot() is not triggered.
+    */
     _custom_type_changed(ev) {
         ev.stopPropagation();
         const type = ev.target.value;
@@ -2331,17 +2483,27 @@ class HeatmapCardEditor extends LitElement {
         this._dispatch_config(config);
     }
 
+    /*
+        Handle scale selection changes from the ha-selector dropdown.
+        Manually dispatches config-changed (bypassing the generic createRenderRoot() handler)
+        because the scale picker needs its own dedicated handler rather than the generic
+        dot-notation config path logic.
+    */
     _scale_changed(ev) {
         ev.stopPropagation();
         const scale = ev.detail?.value ?? ev.target.value;
         if (!scale) { return; }
         const config = JSON.parse(JSON.stringify(this._config));
         config['scale'] = scale;
-        const event = new Event('config-changed');
-        event.detail = {'config': config};
-        this.dispatchEvent(event);
+        this._dispatch_config(config);
     }
 
+    /*
+        Show a warning banner if the selected entity does not have a state_class that HA will
+        record to Long Term Statistics (LTS). Without LTS, the heatmap will always be empty.
+        Valid classes are: measurement, total, total_increasing. Returns nothing if the entity
+        is not yet loaded or if the state_class is valid.
+    */
     render_entity_warning() {
         if (this.entity === undefined) { return; }
         if (this.entity.attributes?.state_class === undefined ||
@@ -2364,6 +2526,20 @@ class HeatmapCardEditor extends LitElement {
         }
     }
 
+    /*
+        Render the full visual editor UI. Returns nothing early if hass or config are not yet set.
+
+        Layout (top to bottom):
+          - Entity picker (always shown)
+          - Entity warning (if entity has an incompatible state_class)
+          - Device class picker (if entity has no device_class of its own)
+          - Card title field
+          - Mode selector (hourly / daily)
+          - Weeks/Days field (context-dependent on mode)
+          - Aggregate selector (daily mode only)
+          - Color scale picker or custom scale editor
+          - Card elements section (legend toggle, legend decimals)
+    */
     render() {
         if (this.myhass === undefined || this._config === undefined) { return; }
 
@@ -2393,6 +2569,13 @@ class HeatmapCardEditor extends LitElement {
             ></ha-entity-picker>
             ${this.render_entity_warning()}
             ${this.render_device_class_picker()}
+            <ha-textfield
+                .label=${"Card title"}
+                .placeholder=${(this.entity && this.entity.attributes.friendly_name) || ''}
+                .value=${this._config.title || ""}
+                .configValue=${"title"}
+                @input=${this.update_field}
+            ></ha-textfield>
             <ha-selector
                 .hass=${this.myhass}
                 .label=${"Mode"}
@@ -2432,6 +2615,17 @@ class HeatmapCardEditor extends LitElement {
             `}
             ${this.render_scale_picker()}
             <h3>Card elements</h3>
+            <ha-formfield .label=${"Show legend"}>
+                <ha-switch
+                    .checked=${this._config.display?.legend !== false}
+                    @change=${(e) => {
+                        const config = JSON.parse(JSON.stringify(this._config));
+                        if (!config.display) { config.display = {}; }
+                        config.display.legend = e.target.checked;
+                        this._dispatch_config(config);
+                    }}
+                ></ha-switch>
+            </ha-formfield>
             <ha-textfield
                 .label=${"Legend decimal places"}
                 .placeholder=${"auto"}
@@ -2442,22 +2636,20 @@ class HeatmapCardEditor extends LitElement {
                 .helper=${"Decimal places shown in the legend bar (default: auto)"}
                 .helperPersistent=${true}
             ></ha-textfield>
-            <ha-textfield
-                .label=${"Card title"}
-                .placeholder=${(this.entity && this.entity.attributes.friendly_name) || ''}
-                .value=${this._config.title || ""}
-                .configValue=${"title"}
-                @input=${this.update_field}
-                ></ha-textfield>
         </div>`
     }
 
     /*
-        Cribbing the general idea from ha-selector-select.ts here, just
-        doing some more manual event work.
+        Translate a DOM input/change event from ha-textfield or ha-checkbox into a
+        'value-changed' event that the root listener in createRenderRoot() can handle.
 
-        Not very generic and a bit fugly. Works for this particular scenario.
+        - For checkboxes, emits the element's value when checked, or 0 when unchecked.
+        - For numeric strings, parses and emits as a float.
+        - For all other strings, emits verbatim.
 
+        The element must have a .configValue property set to the config key (dot notation
+        is supported, e.g. "data.min"). Stops propagation of the original event before
+        re-dispatching to avoid double-processing.
     */
         update_field(ev) {
             ev.stopPropagation();
@@ -2478,6 +2670,19 @@ class HeatmapCardEditor extends LitElement {
             ev.target.dispatchEvent(event);
         }
 
+    /*
+        Override createRenderRoot() to attach a single delegated 'value-changed' listener on the
+        shadow root. This handles all config field updates in one place without needing per-element
+        handlers, as long as each element has a .configValue property set to its config key.
+
+        Special cases handled:
+          - device_class change: also sets the scale to the default for the new class
+          - entity change: if the new entity has a device_class, sets the default scale and clears
+            any manually set device_class override in the config
+          - dot-notation keys (e.g. "data.min"): walks the config object to find the right nesting
+
+        After updating, fires 'config-changed' for HA to persist the new config.
+    */
     createRenderRoot() {
         const root = super.createRenderRoot();
         root.addEventListener("value-changed", (ev) => {
@@ -2514,7 +2719,7 @@ class HeatmapCardEditor extends LitElement {
             */
             var root = config;
             var target = key;
-            if (key.indexOf('.')) {
+            if (key.includes('.')) {
                 for (const segment of key.split('.').slice(0, -1)) {
                     if (root[segment] === undefined) {
                         root[segment] = {};
@@ -2614,7 +2819,7 @@ window.customCards.push({
     description: "Heat maps of entities or energy data",
 });
 console.info(
-    "%c HEATMAP-CARD %c v1.1.0-beta.1 ",
+    "%c HEATMAP-CARD %c v1.1.0-beta.2 ",
     "color: black; background: #F2720C; font-weight: 600;",
     "color: black; background: #00a5c9; font-weight: 600;"
 );
