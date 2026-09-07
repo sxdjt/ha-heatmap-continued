@@ -220,7 +220,7 @@ Hide the controls with `display.navigation: false`.
 |--------|------|---------|-------------|
 | `display.legend` | boolean | `true` | Show or hide the color scale legend |
 | `display.labels` | boolean | `false` | Show numeric values inside each cell (opt-in) |
-| `display.hide_zero` | boolean | `false` | When labels are on, omit the label if the value is 0 |
+| `display.hide_zero` | boolean | `false` | When labels are on, omit the label if the value displays as 0 |
 | `display.decimals` | number | Auto | Fixed decimal places for cell labels and legend tick labels |
 | `display.height` | number | Auto | Fixed height in pixels for the grid; cells and date labels adapt to fit |
 | `display.navigation` | boolean | `true` | Show the history navigation controls above the grid |

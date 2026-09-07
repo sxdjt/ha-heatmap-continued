@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2026.9.6] - 2026-09-06
 
 ### Added
 - Optional per-cell value labels via `display.labels` (requested and contributed by @caitotheonlypotato, #14 and #15). Off by default, so existing cards are unchanged. Each label's text colour is picked for whichever of light or dark contrasts better against that cell's own colour, so labels stay readable across a whole scale rather than only at one end. The cell background stays on `currentcolor` and the label sits in an inner span, which is what keeps blank cells blank.
