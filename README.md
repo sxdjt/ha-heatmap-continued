@@ -26,6 +26,8 @@ In discussions on my other heatmaps cards, many people have commented that [kand
 - **Visual editor** - configure scales, thresholds, and display options without editing YAML
 - **Custom threshold editor** - build a color scale visually with add/remove steps and a color picker
 - **Configurable legend** - show or hide the legend; control decimal places on tick labels
+- **Cell value labels** - optional numbers drawn in each cell, with text colour chosen for contrast against the background (opt-in)
+- **Hide zero labels** - when labels are on, optionally omit the label if the value is 0
 - **Min/max override** - lock the color range to fixed values for consistent comparisons
 - **Cell detail popup** - click any cell for its time window and value; click elsewhere or press Escape to dismiss
 - **Horizontal layout** - carpet-plot orientation with dates across the card, so a year of history fits a full-width section
@@ -116,6 +118,21 @@ aggregate: mean
 
 Daily mode shows one cell per calendar day. Rows are weeks (Monday-Sunday); columns are labeled Mon-Sun using your locale. The `aggregate` option controls which daily statistic is used - `mean` is suitable for most sensors; use `min` or `max` to highlight daily extremes. Use `last` to plot each day's final hour value instead of an average, for sensors where the end-of-day reading is more representative than the daily mean (for example a heat pump COP). `last` reads the mean of the day's last recorded hour from long-term statistics, so older weeks stay populated; it is not the literal last raw sample (which statistics do not retain for measurement sensors).
 
+### Cell Labels Example
+
+```yaml
+type: custom:heatmap-card
+entity: sensor.solar_power
+title: Solar generation heatmap
+days: 21
+display:
+  labels: true
+  hide_zero: true
+  decimals: 0
+```
+
+Cell labels are **opt-in** (`display.labels: true`). Text colour is chosen automatically for contrast against the cell background. With `hide_zero: true` (the default when labels are on), zero values stay blank so inactive hours stay uncluttered. Labels are also suppressed automatically when cells are too narrow to read (for example a horizontal carpet plot over many days).
+
 ---
 
 ## Time Axis
@@ -202,7 +219,9 @@ Hide the controls with `display.navigation: false`.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `display.legend` | boolean | `true` | Show or hide the color scale legend |
-| `display.decimals` | number | Auto | Fixed decimal places for legend tick labels |
+| `display.labels` | boolean | `false` | Show numeric values inside each cell (opt-in) |
+| `display.hide_zero` | boolean | `false` | When labels are on, omit the label if the value is 0 |
+| `display.decimals` | number | Auto | Fixed decimal places for cell labels and legend tick labels |
 | `display.height` | number | Auto | Fixed height in pixels for the grid; cells and date labels adapt to fit |
 | `display.navigation` | boolean | `true` | Show the history navigation controls above the grid |
 | `display.time_labels` | number | Auto | Label every Nth slot on the time axis; omit to let the card choose |
