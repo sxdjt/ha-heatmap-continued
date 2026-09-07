@@ -624,6 +624,75 @@ test('render_cell still colours slots that do have a reading', () => {
     assert.ok(cell.values.includes('rgb(0.5)'));
 });
 
+test('cell_label_text formats to display.decimals, or sensibly without it', () => {
+    const fixed = makeCard({ config: { display: { decimals: 2 } } });
+    assert.equal(fixed.cell_label_text(12.5), '12.50');
+    assert.equal(fixed.cell_label_text(7), '7.00');
+
+    // No decimals configured: whole numbers stay bare, fractions get one place.
+    const auto = makeCard({ config: { display: {} } });
+    assert.equal(auto.cell_label_text(21), '21');
+    assert.equal(auto.cell_label_text(21.44), '21.4');
+});
+
+test('hide_zero suppresses readings that DISPLAY as zero, not just exact zeros', () => {
+    // Regression: hide_zero used to test the raw reading, so a value rounding to "0.00" still drew a visible zero on a card that had asked for none.
+    const card = makeCard({ config: { display: { decimals: 2, hide_zero: true } } });
+    assert.equal(card.cell_label_text(0), null);
+    assert.equal(card.cell_label_text(0.004), null);
+    assert.equal(card.cell_label_text(0.02), '0.02');
+});
+
+test('hide_zero off keeps zero labels', () => {
+    const card = makeCard({ config: { display: { decimals: 2 } } });
+    assert.equal(card.cell_label_text(0), '0.00');
+    assert.equal(card.cell_label_text(0.004), '0.00');
+});
+
+test('widest_label_length ignores empty cells and suppressed labels', () => {
+    const grid = [
+        { vals: [1, null, 123.5] },
+        { vals: [undefined, 0] }
+    ];
+    assert.equal(makeCard({ config: { display: {} }, grid }).widest_label_length(), '123.5'.length);
+
+    // With hide_zero a grid of nothing but zeros has no label to size against.
+    const hidden = makeCard({ config: { display: { hide_zero: true } }, grid: [{ vals: [0, 0] }] });
+    assert.equal(hidden.widest_label_length(), 0);
+});
+
+test('labels_are_legible budgets width by the labels actually drawn', () => {
+    // 24 hourly columns in a 420px grid is 15.4px a cell once the row-title gutter is off.
+    const card = makeCard({
+        config: { mode: 'hourly' },
+        grid: Array.from({ length: 21 }, () => ({ vals: new Array(24).fill(1) })),
+        grid_width: 420,
+        grid_height: 21 * 20
+    });
+    // Two characters ("72") fit that cell; five ("-12.5") do not. A single fixed worst-case threshold rejected both, which is what hid labels at interval 1.
+    assert.equal(card.labels_are_legible(2), true);
+    assert.equal(card.labels_are_legible(5), false);
+});
+
+test('labels_are_legible fires on height as well as width', () => {
+    const card = makeCard({
+        config: { mode: 'hourly' },
+        grid: Array.from({ length: 21 }, () => ({ vals: new Array(6).fill(1) })),
+        grid_width: 420,
+        // display.height: 200 across 21 rows leaves 9.5px a row - too short for a label.
+        grid_height: 200
+    });
+    assert.equal(card.labels_are_legible(2), false);
+});
+
+test('labels_are_legible shows labels when there is nothing to measure', () => {
+    const grid = [{ vals: [1, 2] }];
+    // grid_width/grid_height stay 0 until the ResizeObserver first fires; dropping labels on that first paint would make the card flicker.
+    assert.equal(makeCard({ config: {}, grid, grid_width: 0, grid_height: 0 }).labels_are_legible(4), true);
+    // No labels to draw is not a reason to call the layout illegible.
+    assert.equal(makeCard({ config: {}, grid, grid_width: 420, grid_height: 100 }).labels_are_legible(0), true);
+});
+
 test('bucket_values averages measurements and sums deltas', () => {
     // Array.from normalises the realm: the card is evaluated in a vm context, so arrays
     // it builds do not share this file's Array.prototype and deepStrictEqual rejects them.

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Optional per-cell value labels via `display.labels` (requested and contributed by @caitotheonlypotato, #14 and #15). Off by default, so existing cards are unchanged. Each label's text colour is picked for whichever of light or dark contrasts better against that cell's own colour, so labels stay readable across a whole scale rather than only at one end. The cell background stays on `currentcolor` and the label sits in an inner span, which is what keeps blank cells blank.
+- `display.hide_zero` blanks the label on readings that display as zero, keeping idle hours uncluttered on sensors that sit at zero most of the time. The test is applied after `decimals` rounding, so a reading of `0.004` shown at two decimal places counts as zero rather than drawing "0.00".
+- `display.decimals` now sets the decimal places for cell labels as well as legend ticks.
+- Labels are suppressed automatically when the cells are too small to hold them, measured against the grid's real size rather than an assumed one. The width budget is derived from the labels actually being drawn, so a two-character reading survives a cell that a longer label could not - a single worst-case threshold hid labels on the default hourly layout at ordinary dashboard widths.
+
 ## [2026.9.3] - 2026-09-03
 
 Supersedes the beta.1 through beta.5 pre-releases; everything below is the combined

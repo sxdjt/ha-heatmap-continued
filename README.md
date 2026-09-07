@@ -131,7 +131,7 @@ display:
   decimals: 0
 ```
 
-Cell labels are **opt-in** (`display.labels: true`). Text colour is chosen automatically for contrast against the cell background. With `hide_zero: true` (the default when labels are on), zero values stay blank so inactive hours stay uncluttered. Labels are also suppressed automatically when cells are too narrow to read (for example a horizontal carpet plot over many days).
+Cell labels are **opt-in** (`display.labels: true`). Text colour is chosen automatically for contrast against the cell background. With `hide_zero: true`, readings that *display* as zero stay blank so idle hours stay uncluttered - the test is applied to the label after `decimals` rounding, so at `decimals: 2` a reading of `0.004` counts as zero. Labels are also suppressed automatically when the cells are too small to hold them; the width budget comes from the labels actually being drawn, so short labels survive narrower cells than long ones.
 
 ---
 

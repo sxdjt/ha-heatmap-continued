@@ -934,12 +934,17 @@ const MAX_DECIMAL_PLACES = 10;
 const MAX_CUSTOM_SCALE_STEPS = 100;
 
 /*
-    Below this estimated cell width or height (px), per-cell labels are suppressed
-    because they become illegible. Width matters for horizontal carpet plots with many
-    columns; height matters when display.height packs many rows into a short card.
+    Below this estimated cell height (px), per-cell labels are suppressed because they become illegible. Matters when display.height packs many rows into a short card.
 */
-const MIN_LABEL_CELL_WIDTH_PX = 22;
 const MIN_LABEL_CELL_HEIGHT_PX = 14;
+
+/*
+    Approximate advance width of one label character at the .hm-label size (0.7em bold against the card's base font), plus the breathing room a label wants either side of it. Together they decide whether the labels actually being drawn will fit their cells.
+
+    Deliberately rough - being a pixel out costs a label that hugs its cell edges, not a broken layout. A single fixed worst-case width was tried first and hid two-character labels that had ample room, because it had to budget for something like "-12.5".
+*/
+const LABEL_CHAR_WIDTH_PX = 6;
+const LABEL_SIDE_PADDING_PX = 2;
 
 /*
     Bounds offered by the editor's grid height control. These constrain the UI only;
@@ -1466,7 +1471,7 @@ class HeatmapCard extends LitElement {
         // We may be trying to render before we've received the recorder data.
         if (this.grid === undefined) { this.grid = []; }
         // Evaluate once per render - render_cell is called thousands of times.
-        this._labels_legible = this.labels_are_legible();
+        this._labels_legible = this.labels_are_legible(this.widest_label_length());
         const is_horizontal = (this.config?.orientation === 'horizontal');
         return html`
             <ha-card header="${this.meta.title}" id="card">
@@ -1530,14 +1535,10 @@ class HeatmapCard extends LitElement {
         // Prefer the per-render cache from render(); fall back for direct unit-test calls.
         const legible = (typeof this._labels_legible === 'boolean')
             ? this._labels_legible
-            : this.labels_are_legible();
+            : this.labels_are_legible(this.widest_label_length());
         if (this.config?.display?.labels === true && legible) {
-            const hide_zero = this.config?.display?.hide_zero === true;
-            if (!(hide_zero && Number(util) === 0)) {
-                const decimals = this.config?.display?.decimals;
-                const text = Number.isInteger(decimals)
-                    ? Number(util).toFixed(decimals)
-                    : (Number.isInteger(util) ? String(util) : Number(util).toFixed(1));
+            const text = this.cell_label_text(util);
+            if (text !== null) {
                 let text_color = '#fff';
                 try {
                     // Pick whichever of black/white has higher contrast against the cell.
@@ -1552,17 +1553,47 @@ class HeatmapCard extends LitElement {
     }
 
     /*
-        True when per-cell labels would still be readable in the current layout.
+        The text to draw inside one cell, or null when the cell should carry no label.
 
-        Uses the ResizeObserver-maintained grid_width / grid_height (same source as
-        column_label_stride) so we do not force layout on every cell. When the grid has
-        not been measured yet (width/height still 0), return true so the first paint is
-        not missing labels that would appear a moment later.
+        Returns null for readings display.hide_zero suppresses. hide_zero is tested against the FORMATTED text rather than the raw reading: at `decimals: 2` a value of 0.004 formats as "0.00", and hiding "zero" has to mean the zeros the user can see. Testing the raw value instead left visible 0.00 labels on a card that asked for none.
     */
-    labels_are_legible() {
+    cell_label_text(value) {
+        const decimals = this.config?.display?.decimals;
+        const text = Number.isInteger(decimals)
+            ? Number(value).toFixed(decimals)
+            : (Number.isInteger(value) ? String(value) : Number(value).toFixed(1));
+        if (this.config?.display?.hide_zero === true && Number(text) === 0) { return null; }
+        return text;
+    }
+
+    /*
+        Length in characters of the longest label the current grid will actually draw, or 0 when every cell is empty or suppressed.
+
+        Drives the width half of labels_are_legible(). Measuring the real labels is what lets a two-character reading survive a narrow cell that a fixed worst-case threshold would have rejected.
+    */
+    widest_label_length() {
+        let widest = 0;
+        for (const entry of (this.grid || [])) {
+            for (const value of (entry.vals || [])) {
+                if (value === null || value === undefined) { continue; }
+                const text = this.cell_label_text(value);
+                if (text !== null) { widest = Math.max(widest, text.length); }
+            }
+        }
+        return widest;
+    }
+
+    /*
+        True when per-cell labels of `label_chars` characters would still be readable in the current layout.
+
+        Uses the ResizeObserver-maintained grid_width / grid_height (same source as column_label_stride) so we do not force layout on every cell. When the grid has not been measured yet (width/height still 0), return true so the first paint is not missing labels that would appear a moment later.
+    */
+    labels_are_legible(label_chars) {
         if (!this.grid || this.grid.length === 0) { return true; }
         // Not measured yet - show labels; matches the label_stride "unknown size" policy.
         if (!this.grid_width || !this.grid_height) { return true; }
+        // Nothing will be drawn (empty grid, or hide_zero suppressed every label).
+        if (!label_chars) { return true; }
 
         const is_horizontal = (this.config?.orientation === 'horizontal');
         // Horizontal: one column per grid entry (day/week). Vertical: one per time slot.
@@ -1577,7 +1608,8 @@ class HeatmapCard extends LitElement {
         const cell_w = usable_width / Math.max(columns, 1);
         const cell_h = this.grid_height / Math.max(rows, 1);
 
-        return cell_w >= MIN_LABEL_CELL_WIDTH_PX && cell_h >= MIN_LABEL_CELL_HEIGHT_PX;
+        const needed_width = (label_chars * LABEL_CHAR_WIDTH_PX) + LABEL_SIDE_PADDING_PX;
+        return cell_w >= needed_width && cell_h >= MIN_LABEL_CELL_HEIGHT_PX;
     }
 
     /*
