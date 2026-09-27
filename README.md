@@ -87,6 +87,26 @@ scale: net energy
 
 The `net energy` scale is diverging (blue for export, white near zero, red for import) and, with auto range, centers zero by widening the range symmetrically. Use `operation: sum` instead to add two entities (for example two circuits' consumption). Multi-entity combination is only available in hourly mode.
 
+### Fluctuating "total" sensors (e.g. a live count)
+
+`state_class: total` is meant for cumulative meters (energy, gas) but some integrations
+also use it for a value that simply fluctuates and is allowed to decrease - for example a
+sensor reporting how many aircraft, vehicles, or devices are currently in range. By
+default the card treats every `total` entity as a meter and shows the change between
+hours, which for a fluctuating sensor produces small, often negative, meaningless numbers.
+
+Set `treat_as: measurement` to show the entity's actual per-hour value instead:
+
+```yaml
+type: custom:heatmap-card
+entity: sensor.flightradar24_current_in_area
+mode: hourly
+treat_as: measurement
+```
+
+Only use this for a `total` sensor that genuinely fluctuates - applying it to a real meter
+will show a running total per hour instead of usage per hour.
+
 Both entities must be recorded the same way: either both `state_class: measurement`, or both `total`/`total_increasing`. Mixing the two is not meaningful (one records hourly averages, the other hourly deltas), and the card shows an error instead of rendering. Energy sensors are converted to kWh automatically; for other device classes, make sure both entities use the same unit.
 
 ### Horizontal (Carpet Plot) Example
@@ -203,6 +223,7 @@ Hide the controls with `display.navigation: false`.
 | `days` | number | `21` | Days of history to show (hourly mode) |
 | `weeks` | number | `12` | Weeks of history to show (daily mode) |
 | `aggregate` | string | `mean` | Daily aggregate statistic: `mean`, `min`, `max`, or `last` (daily mode). `last` = final hour's value of each day |
+| `treat_as` | string | - | Set to `measurement` for a `state_class: total` entity that fluctuates (e.g. a live count) rather than accumulates (e.g. an energy meter) - see below |
 | `device_class` | string | From entity | Override device class for scale auto-selection |
 | `display` | object | - | Display options (see below) |
 | `scale` | string or object | Auto (by device class) | Built-in scale name or custom scale definition |

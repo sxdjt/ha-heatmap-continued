@@ -101,6 +101,20 @@ test('combine_grids treats missing secondary hours per the state_class null poli
     assert.deepEqual([...tResult[0].vals], [9, 20]);
 });
 
+test('combine_grids applies the measurement null policy to a total entity with treat_as: measurement', () => {
+    const card = makeCard({
+        meta: { state_class: 'total' },
+        config: { treat_as: 'measurement' }
+    });
+    const result = card.combine_grids(
+        [{ date: 'Jan 01', nativeDate: new Date(2024, 0, 1), vals: [10, 20] }],
+        [{ date: 'Jan 01', nativeDate: new Date(2024, 0, 1), vals: [1] }],
+        'difference'
+    );
+    // Unmatched hour becomes null, not 0 - same as a plain measurement entity.
+    assert.deepEqual([...result[0].vals], [9, null]);
+});
+
 test('max_from and min_from ignore nulls', () => {
     const card = makeCard();
     const grid = [
@@ -255,6 +269,17 @@ test('calculate_measurement_values builds one row per date, newest first', () =>
     assert.equal(grid[1].vals[1], 6);
 });
 
+test('calculate_measurement_values reads an alternate field when given one', () => {
+    // Used for `total`-class entities with treat_as: measurement, whose statistics
+    // carry 'state' (last raw reading) rather than 'mean'.
+    const card = makeCard({ meta: { language: 'en-US' } });
+    const grid = card.calculate_measurement_values([
+        { start: '2024-01-01T00:00:00Z', mean: 999, state: 2 },
+        { start: '2024-01-01T01:00:00Z', mean: 999, state: 5 }
+    ], 'state');
+    assert.deepEqual([...grid[0].vals], [2, 5]);
+});
+
 test('calculate_increasing_values stores hourly deltas and fills gaps with zero', () => {
     const card = makeCard({ meta: { language: 'en-US' } });
     const grid = card.calculate_increasing_values([
@@ -286,6 +311,7 @@ test('setConfig rejects invalid configuration', () => {
     assert.throws(() => card.setConfig({ entity: 'sensor.a', mode: 'weekly' }), /`mode`/);
     assert.throws(() => card.setConfig({ entity: 'sensor.a', aggregate: 'median' }), /`aggregate`/);
     assert.throws(() => card.setConfig({ entity: 'sensor.a', operation: 'divide' }), /`operation`/);
+    assert.throws(() => card.setConfig({ entity: 'sensor.a', treat_as: 'delta' }), /`treat_as`/);
     assert.throws(
         () => card.setConfig({ entity: 'sensor.a', data: { max: 'high' } }),
         /`data.max`/
@@ -294,6 +320,15 @@ test('setConfig rejects invalid configuration', () => {
         () => card.setConfig({ entity: 'sensor.a', data: { min: 'low' } }),
         /`data.min`/
     );
+});
+
+test('setConfig defaults treat_as to undefined and accepts measurement', () => {
+    const card = makeCard();
+    card.setConfig({ entity: 'sensor.a' });
+    assert.equal(card.config.treat_as, undefined);
+
+    card.setConfig({ entity: 'sensor.a', treat_as: 'measurement' });
+    assert.equal(card.config.treat_as, 'measurement');
 });
 
 test('setConfig rejects a secondary entity outside hourly mode', () => {

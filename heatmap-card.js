@@ -2395,7 +2395,10 @@ class HeatmapCard extends LitElement {
             },
             "start_time": startTime.toISOString(),
             "end_time": end.toISOString(),
-            "types":["sum", "mean"]
+            // 'state' is only consumed for a 'total' entity with `treat_as: measurement`
+            // (see the switch below), but it's cheap to always request alongside the
+            // usual sum/mean rather than branch the request per consumer.
+            "types":["sum", "mean", "state"]
         }).then(recorderResponse => {
             // Build one grid per requested entity, then combine them. For the common
             // single-entity case there is exactly one grid and no combination happens.
@@ -2418,6 +2421,18 @@ class HeatmapCard extends LitElement {
                         grids.push(this.calculate_measurement_values(consumerData));
                         break;
                     case 'total':
+                        // `total` covers two different things HA cannot tell apart by
+                        // state_class alone: cumulative meters (energy, gas - where
+                        // summing hourly deltas is correct) and fluctuating totals that
+                        // merely permit decreases (e.g. "number of X currently active" -
+                        // where diffing consecutive readings produces meaningless, often
+                        // negative, noise). `treat_as: measurement` opts an entity into
+                        // the latter reading: display its raw per-hour value instead of
+                        // a delta. total_increasing is unambiguous and always deltas.
+                        grids.push(this.config.treat_as === 'measurement'
+                            ? this.calculate_measurement_values(consumerData, 'state')
+                            : this.calculate_increasing_values(consumerData));
+                        break;
                     case 'total_increasing':
                         grids.push(this.calculate_increasing_values(consumerData));
                         break;
@@ -2514,7 +2529,11 @@ class HeatmapCard extends LitElement {
         for (const row of secondary) {
             secondaryByDay.set(this.day_key(row.nativeDate), row.vals);
         }
-        const isMeasurement = this.meta.state_class === 'measurement';
+        // A `total` entity running under `treat_as: measurement` (see get_recorder())
+        // is displaying raw per-hour readings, not deltas, so it needs measurement's
+        // null policy too: a missing hour must stay null, not silently become 0.
+        const isMeasurement = this.meta.state_class === 'measurement' ||
+            (this.meta.state_class === 'total' && this.config.treat_as === 'measurement');
         const out = [];
         for (const row of primary) {
             const otherVals = secondaryByDay.get(this.day_key(row.nativeDate)) ?? [];
@@ -2743,11 +2762,15 @@ class HeatmapCard extends LitElement {
 
     /*
         Build hourly grid rows from Statistics API `period: hour` data for measurement entities.
-        Each row represents one calendar date; each of the 24 slots holds the mean for that hour.
+        Each row represents one calendar date; each of the 24 slots holds `entry[field]` for
+        that hour (default 'mean'). A `total`-class sensor overridden with `treat_as:
+        measurement` (see get_recorder()) reuses this with field 'state', since total/
+        total_increasing statistics don't carry a 'mean' at all - 'state' is their last raw
+        reading for the period, which is the closest equivalent for a fluctuating quantity.
         The last row is truncated to the last received hour (strips future hours for today).
         Rows are returned in reverse-chronological order (most recent date first).
     */
-    calculate_measurement_values(consumerData) {
+    calculate_measurement_values(consumerData, field = 'mean') {
         var grid = [];
         var gridTemp = null;
         var prevDate = null;
@@ -2764,7 +2787,7 @@ class HeatmapCard extends LitElement {
                 grid.push({'date': dateRep, 'nativeDate': start, 'vals': gridTemp});
                 prevDate = dateRep;
             }
-            gridTemp[hour] = entry.mean;
+            gridTemp[hour] = entry[field];
         }
         /*
             For the last date in the series, remove any entries that we didn't get from
@@ -2911,6 +2934,13 @@ class HeatmapCard extends LitElement {
         if (config.operation && !['difference', 'sum'].includes(config.operation)) {
             throw new Error("`operation` must be 'difference' or 'sum'");
         }
+        // Only meaningful for state_class 'total' (see get_recorder()); the entity's
+        // actual state_class isn't known yet here (that needs hass, not just config),
+        // so this only validates the value's shape. A mismatched state_class is simply
+        // ignored at fetch time rather than rejected.
+        if (config.treat_as !== undefined && config.treat_as !== 'measurement') {
+            throw new Error("`treat_as` must be 'measurement'");
+        }
         // Multi-entity combination relies on hourly sum/delta alignment. Daily mode
         // aggregates by mean/min/max, which are not meaningful to subtract, so reject it.
         if (config.secondary_entity && (config.mode ?? 'hourly') === 'daily') {
@@ -2981,6 +3011,7 @@ class HeatmapCard extends LitElement {
             // combination (difference or sum) of the two entities' values.
             'secondary_entity': config.secondary_entity,
             'operation': (config.operation ?? 'difference'),
+            'treat_as': config.treat_as,
             'scale': config.scale,
             'data': (config.data ?? {}),
             'display': (config.display ?? {})
@@ -3504,6 +3535,34 @@ class HeatmapCardEditor extends LitElement {
                 .configValue=${"device_class"}
                 helper="What device_class best represents this entity?"
             ></ha-selector>
+        `;
+    }
+
+    /*
+        Only shown for a hourly-mode entity whose state_class is 'total'. That state_class
+        covers both true cumulative meters (energy, gas - deltas are correct) and
+        fluctuating totals that merely permit decreases (e.g. "number of X currently
+        active" - deltas produce meaningless, often negative, noise). There's no attribute
+        to tell the two apart, so this is a manual opt-in; see get_recorder() for the
+        `treat_as` config key this writes.
+    */
+    render_treat_as_toggle() {
+        if (this.entity?.attributes?.state_class !== 'total') { return ''; }
+        return html`
+            <ha-formfield .label=${"Treat as fluctuating value (not a cumulative meter)"}>
+                <ha-switch
+                    .checked=${this._config.treat_as === 'measurement'}
+                    @change=${(e) => {
+                        const config = deep_clone(this._config);
+                        if (e.target.checked) {
+                            config.treat_as = 'measurement';
+                        } else {
+                            delete config.treat_as;
+                        }
+                        this._dispatch_config(config);
+                    }}
+                ></ha-switch>
+            </ha-formfield>
         `;
     }
 
@@ -4073,6 +4132,7 @@ class HeatmapCardEditor extends LitElement {
                             .value=${String(this._config.time_interval ?? 1)}
                             .configValue=${"time_interval"}
                         ></ha-selector>
+                        ${this.render_treat_as_toggle()}
                     `}
                     ${this.render_multi_entity()}
                 </div>
@@ -4423,7 +4483,7 @@ window.customCards.push({
     }
 });
 console.info(
-    "%c HEATMAP-CARD %c 2026.9.6 ",
+    "%c HEATMAP-CARD %c 2026.9.26-beta.1 ",
     "color: black; background: #F2720C; font-weight: 600;",
     "color: black; background: #00a5c9; font-weight: 600;"
 );
