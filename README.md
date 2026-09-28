@@ -107,6 +107,14 @@ treat_as: measurement
 Only use this for a `total` sensor that genuinely fluctuates - applying it to a real meter
 will show a running total per hour instead of usage per hour.
 
+`treat_as: measurement` is for a *snapshot* value - "how many are in range right now" - not
+for a sensor that reports *events since the last poll* (e.g. an "entered area" or "count"
+sensor that resets toward zero between updates). For that shape, showing the last poll's
+reading per hour undercounts any hour with more than one poll's worth of events; instead,
+accumulate the events into a running total upstream (a `trigger`-based template sensor
+feeding a `utility_meter`) and point the card at that - see
+[#16](https://github.com/sxdjt/ha-heatmap-continued/issues/16) for a worked example.
+
 Both entities must be recorded the same way: either both `state_class: measurement`, or both `total`/`total_increasing`. Mixing the two is not meaningful (one records hourly averages, the other hourly deltas), and the card shows an error instead of rendering. Energy sensors are converted to kWh automatically; for other device classes, make sure both entities use the same unit.
 
 ### Horizontal (Carpet Plot) Example
