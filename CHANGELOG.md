@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.9.28-beta.1] - 2026-09-28
+
+Pre-release for testing.
+
+### Changed
+- The editor's "Device class" picker (shown only when the entity has no `device_class`
+  attribute of its own) is now a "Temperature F/C" toggle instead of a dropdown.
+  `DEVICE_CLASSES` only ever carried special behaviour for `temperature` (Fahrenheit/Celsius
+  unit conversion) - every other listed class was a no-op default-scale placeholder, so the
+  dropdown implied a broader device_class picker than the card actually acts on. Any
+  device_class is still valid in YAML; this only changes what the visual editor offers.
+
+### Fixed
+- `treat_as: measurement` override for `state_class: total` sensors that fluctuate rather
+  than accumulate (e.g. entity counts), so their heatmap no longer computes meaningless
+  deltas (#16).
+
 ## [2026.9.6] - 2026-09-06
 
 ### Added

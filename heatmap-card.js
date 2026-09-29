@@ -884,48 +884,20 @@ const SCALE_ALIASES = {
 /* Home Assistant device class mappings                                      */
 /* ------------------------------------------------------------------------- */
 /*
-    Maps every HA sensor device_class to optional metadata used by HeatmapScales:
+    Maps HA sensor device_classes to optional metadata used by HeatmapScales:
       - default:      the built-in scale key to use when no scale is explicitly configured
       - unit_system:  the key in hass.config.unit_system whose value identifies the
                       display unit (e.g. "temperature" -> unit_system.temperature = "°F").
                       Only present for device classes where HA performs unit conversion.
 
-    An empty object means the device class is valid for use with the card but has no
-    default scale and no unit-system mapping (falls back to the global default: stoplight).
+    Deliberately not exhaustive - this is not a mirror of HA's device_class enum. Every
+    device_class is still valid in YAML (setConfig does not check membership here); this
+    map only exists to drive unit conversion, which today only temperature needs. Any other
+    class falls through to the global default scale, same as if this map were empty for it.
+    The editor's device_class picker offers only these keys as a result.
 */
 const DEVICE_CLASSES = {
-    "apparent_power": {},
-    "atmospheric_pressure": {},
-    "aqi": {},
-    "battery": {},
-    "carbon_dioxide": {"default": "carbon dioxide"},
-    "carbon_monoxide": {},
-    "current": {},
-    "date": {},
-    "duration": {},
-    "energy": {},
-    "frequency": {},
-    "gas": {},
-    "humidity": {},
-    "illuminance": {},
-    "monetary": {},
-    "nitrogen_dioxide": {},
-    "nitrogen_monoxide": {},
-    "nitrous_oxide": {},
-    "ozone": {},
-    "pm1": {},
-    "pm10": {},
-    "pm25": {"default": "pm25"},
-    "power_factor": {},
-    "power": {},
-    "pressure": {},
-    "reactive_power": {},
-    "signal_strength": {},
-    "sulphur_dioxide": {},
-    "temperature": {"default": "outdoor temperature", "unit_system": "temperature"},
-    "timestamp": {},
-    "volatile_organic_compounds": {},
-    "voltage": {}
+    "temperature": {"default": "outdoor temperature", "unit_system": "temperature"}
 };
 
 const MAX_DAYS = 365;
@@ -1320,7 +1292,7 @@ class HeatmapScales {
         // TODO: See if this can be simplified. It's a bit more code than
         // I'd like for what it does.
         if (config.unit && device_class && unit_system) {
-            const dc_domain = DEVICE_CLASSES[device_class].unit_system;
+            const dc_domain = DEVICE_CLASSES[device_class]?.unit_system;
             const us_unit = unit_system[dc_domain];
             if (dc_domain &&
                 us_unit &&
@@ -3518,23 +3490,31 @@ class HeatmapCardEditor extends LitElement {
 
     /*
         Only shown when the entity does not expose a device_class attribute of its own.
-        Uses ha-selector (MD3) instead of the deprecated ha-select + mwc-list-item.
-        The root value-changed listener in createRenderRoot() handles the config update,
-        including setting the default scale for the chosen device class.
+        DEVICE_CLASSES carries metadata for temperature only (F/C unit conversion), so this
+        is a plain on/off toggle rather than a picker over the whole HA device_class enum.
+        Bypasses the delegated value-changed listener in createRenderRoot() (that listener
+        expects ev.detail.value, which ha-switch's plain 'change' event does not provide),
+        dispatching config-changed directly instead - same pattern as render_treat_as_toggle().
     */
     render_device_class_picker() {
         if (!this.entity || this.entity.attributes.device_class) { return; }
 
-        const dc_options = Object.keys(DEVICE_CLASSES).map(dc => ({ value: dc, label: dc }));
         return html`
-            <ha-selector
-                .hass=${this.myhass}
-                .label=${"Device class"}
-                .selector=${{select: {options: dc_options}}}
-                .value=${this._config.device_class ?? ''}
-                .configValue=${"device_class"}
-                helper="What device_class best represents this entity?"
-            ></ha-selector>
+            <ha-formfield .label=${"Temperature F/C"}>
+                <ha-switch
+                    .checked=${this._config.device_class === 'temperature'}
+                    @change=${(e) => {
+                        const config = deep_clone(this._config);
+                        if (e.target.checked) {
+                            config.device_class = 'temperature';
+                            config.scale = this.scales.defaults_for('temperature');
+                        } else {
+                            delete config.device_class;
+                        }
+                        this._dispatch_config(config);
+                    }}
+                ></ha-switch>
+            </ha-formfield>
         `;
     }
 
@@ -4262,10 +4242,13 @@ class HeatmapCardEditor extends LitElement {
         handlers, as long as each element has a .configValue property set to its config key.
 
         Special cases handled:
-          - device_class change: also sets the scale to the default for the new class
           - entity change: if the new entity has a device_class, sets the default scale and clears
             any manually set device_class override in the config
           - dot-notation keys (e.g. "data.min"): walks the config object to find the right nesting
+
+        Note: the device_class toggle (render_device_class_picker()) is an ha-switch, not a
+        value-changed-emitting element, so it dispatches config-changed directly and never
+        reaches this listener.
 
         After updating, fires 'config-changed' for HA to persist the new config.
     */
@@ -4276,14 +4259,6 @@ class HeatmapCardEditor extends LitElement {
             const key = ev.target.configValue;
             const val = ev.detail.value;
             var config = deep_clone(this._config);
-
-            /*
-                When updating the device class, we also want to set the
-                scale to the class default.
-            */
-            if (key === 'device_class') {
-                config['scale'] = this.scales.defaults_for(val);
-            }
 
             /*
                 When updating the entity, set the scale to the class default
@@ -4483,7 +4458,7 @@ window.customCards.push({
     }
 });
 console.info(
-    "%c HEATMAP-CARD %c 2026.9.26-beta.1 ",
+    "%c HEATMAP-CARD %c 2026.9.28-beta.1 ",
     "color: black; background: #F2720C; font-weight: 600;",
     "color: black; background: #00a5c9; font-weight: 600;"
 );
