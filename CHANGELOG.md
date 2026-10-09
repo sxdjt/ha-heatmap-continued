@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Minute mode (`mode: minute`, "High Res Mode" in the visual editor, with an info icon
+  explaining it) for fast-changing sensors (requested in #17 by @caiusseverus).
+  Rows are clock hours and columns are 5-minute slices of the hour, read from Home
+  Assistant's 5-minute short-term statistics. `minute_interval` groups them into 10, 15, 20
+  or 30-minute cells. Works in both layouts and with `secondary_entity`. Short-term
+  statistics are only kept for the recorder's `purge_keep_days` (10 days by default), so
+  `days` defaults to 1 in this mode and is capped at 31; paging back past the retained data
+  says so instead of showing a bare "No data". Refreshes every 5 minutes instead of 10.
+
 ## [2026.9.28-beta.1] - 2026-09-28
 
 Pre-release for testing.

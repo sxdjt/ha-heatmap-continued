@@ -947,6 +947,35 @@ const MAX_GRID_HEIGHT_PX = 2000;
 */
 const TIME_INTERVALS = [1, 2, 3, 4, 6, 8, 12, 24];
 
+/*
+    Minute mode. Rows are hours and columns are slices of the hour, built from Home
+    Assistant's short-term (5-minute) statistics.
+
+    Short-term statistics are purged with the recorder's purge_keep_days (10 days by
+    default), so minute mode cannot reach as far back as the hourly long-term statistics.
+    MAX_MINUTE_DAYS bounds the row count (24 per day) rather than promising data: a user
+    who raised purge_keep_days can use it, and anyone else just sees the older rows absent.
+
+    MINUTE_INTERVALS are the cell sizes on offer: multiples of the 5-minute statistic that
+    divide an hour evenly, for the same reason TIME_INTERVALS divides a day.
+*/
+const STATISTIC_MINUTES = 5;
+const MINUTE_INTERVALS = [5, 10, 15, 20, 30];
+const MAX_MINUTE_DAYS = 31;
+const DEFAULT_MINUTE_DAYS = 1;
+// Spacing of minute-axis labels in vertical layout: every quarter hour.
+const DEFAULT_MINUTE_LABEL_INTERVAL = 15;
+// Hour-row label strides that divide a day, so midnight rows always carry a label.
+const HOUR_ROW_STRIDES = [1, 2, 3, 4, 6, 12, 24];
+/*
+    Decimal places kept on minute-mode deltas. Hourly deltas keep 2, but 5 minutes of a
+    500 W load is 0.042 kWh, and 2 places would flatten it to 0.04 - a 5% error that
+    makes neighbouring cells look identical. 3 places is watt-hour resolution.
+*/
+const MINUTE_DELTA_DECIMALS = 3;
+// 5-minute statistics land every 5 minutes, so refresh twice as often as hourly mode.
+const MINUTE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
 // Default spacing of time-axis labels in vertical layout, preserved from the original
 // hardcoded 24-column header (labels at 00, 04, 08, 12, 16, 20 plus the final hour).
 const DEFAULT_HOUR_LABEL_INTERVAL = 4;
@@ -1038,6 +1067,30 @@ function label_stride(label_count, available_px, min_px_per_label) {
     const px_per_label = available_px / label_count;
     if (px_per_label >= min_px_per_label) { return 1; }
     return Math.ceil(min_px_per_label / px_per_label);
+}
+
+/*
+    Round a label stride up to the nearest value in `allowed`, so labels land on aligned
+    positions (e.g. every 6th hour rather than every 5th). Falls back to the largest value
+    when the stride exceeds them all.
+*/
+function align_stride(stride, allowed) {
+    return allowed.find((value) => value >= stride) ?? allowed[allowed.length - 1];
+}
+
+/*
+    The instant the local clock hour containing `date` began.
+
+    Subtracts the local minute-of-hour rather than calling setMinutes(0): on the night
+    clocks go back, 01:30 occurs twice, and setMinutes() may resolve to the wrong one of
+    the two 01:00s. Subtraction stays on the timeline. Zones with half- or quarter-hour
+    offsets work too, because getMinutes() is already local.
+*/
+function local_hour_start(date) {
+    return new Date(date.getTime()
+        - (date.getMinutes() * 60000)
+        - (date.getSeconds() * 1000)
+        - date.getMilliseconds());
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1591,9 +1644,51 @@ class HeatmapCard extends LitElement {
     render_rows_vertical() {
         const stride = this.row_label_stride();
         return this.grid.map((entry, row) => html`<tr>
-            <td class="hm-row-title"><span>${row % stride === 0 ? entry.date : ''}</span></td>
+            <td class="hm-row-title"><span>${this.vertical_row_title(entry, row, stride)}</span></td>
             ${entry.vals.map((util, idx) => this.render_cell(util, row, idx))}
         </tr>`);
+    }
+
+    /*
+        Row title for vertical layout, or '' when this row falls between labels.
+
+        Hourly and daily rows are dates, thinned by position. Minute mode rows are clock
+        hours, so they are thinned by the hour itself: with a stride of 6 the labels sit
+        at 00, 06, 12 and 18 rather than wherever the current hour happens to fall. The
+        midnight row shows the date instead of "00:00", which is how a reader finds the
+        day boundaries in a run of hours.
+    */
+    vertical_row_title(entry, row, stride) {
+        if (!this.is_minute_mode()) {
+            return (row % stride === 0) ? entry.date : '';
+        }
+        const hour = entry.nativeDate.getHours();
+        if (hour % stride !== 0) { return ''; }
+        return (hour === 0) ? entry.date : this.hour_text(hour);
+    }
+
+    /*
+        An hour of the day as an axis label: "14:00", or "2 PM" on a 12-hour locale.
+    */
+    hour_text(hour) {
+        if (this.myhass.locale.time_format === '12') { return hour_label_12h(hour); }
+        return `${String(hour).padStart(2, '0')}:00`;
+    }
+
+    /*
+        True in minute mode: rows are clock hours, columns are slices of the hour, and
+        data comes from 5-minute short-term statistics. Optional chaining because HA can
+        hand the card a hass object before setConfig() has run.
+    */
+    is_minute_mode() {
+        return this.config?.mode === 'minute';
+    }
+
+    /*
+        Minutes covered by one cell in minute mode.
+    */
+    minute_interval() {
+        return this.config.minute_interval ?? STATISTIC_MINUTES;
     }
 
     /*
@@ -1663,8 +1758,12 @@ class HeatmapCard extends LitElement {
         grid untouched, so the default path is exactly as it was.
     */
     bucket_grid(grid) {
-        const interval = this.config.time_interval ?? 1;
-        if (interval <= 1 || this.config.mode === 'daily') { return grid; }
+        if (this.config.mode === 'daily') { return grid; }
+        // Minute mode groups 5-minute statistics; hourly mode groups hours.
+        const interval = this.is_minute_mode()
+            ? (this.minute_interval() / STATISTIC_MINUTES)
+            : (this.config.time_interval ?? 1);
+        if (interval <= 1) { return grid; }
         // Deltas add up over a longer window; means have to be averaged. See bucket_values.
         const use_sum = ['total', 'total_increasing'].includes(this.meta.state_class);
         return grid.map((entry) => ({
@@ -1693,6 +1792,9 @@ class HeatmapCard extends LitElement {
         if (this.config.orientation === 'horizontal') {
             return label_stride(slot_count, this.grid_height, MIN_STACKED_LABEL_PX);
         }
+        if (this.is_minute_mode()) {
+            return Math.max(1, Math.round(DEFAULT_MINUTE_LABEL_INTERVAL / this.minute_interval()));
+        }
         return Math.max(1, Math.round(DEFAULT_HOUR_LABEL_INTERVAL / this.time_interval()));
     }
 
@@ -1710,6 +1812,7 @@ class HeatmapCard extends LitElement {
             day_date.setDate(day_date.getDate() + slot);
             return new Intl.DateTimeFormat(this.meta.language, { weekday: 'short' }).format(day_date);
         }
+        if (this.is_minute_mode()) { return this.minute_text(slot); }
         const interval = this.time_interval();
         const hour = slot * interval;
         if (this.myhass.locale.time_format === '12') {
@@ -1728,11 +1831,21 @@ class HeatmapCard extends LitElement {
         Horizontal layout puts time down the side, vertical puts dates there.
     */
     corner_label() {
-        const key = (this.config.orientation === 'horizontal')
+        // Minute mode has time down the side in both layouts: hours, or minutes.
+        const time_down_side = (this.config.orientation === 'horizontal') || this.is_minute_mode();
+        const key = time_down_side
             ? 'ui.dialogs.helper_settings.input_datetime.time'
             : 'ui.dialogs.helper_settings.input_datetime.date';
-        return this.myhass.localize(key)
-            || (this.config.orientation === 'horizontal' ? 'Time' : 'Date');
+        return this.myhass.localize(key) || (time_down_side ? 'Time' : 'Date');
+    }
+
+    /*
+        Label for a minute-mode slot: the minute past the hour it starts at, e.g. ":15".
+        The colon is what stops ":05" being read as five o'clock on an axis that sits next
+        to hour labels.
+    */
+    minute_text(slot) {
+        return `:${String(slot * this.minute_interval()).padStart(2, '0')}`;
     }
 
     /*
@@ -1745,6 +1858,7 @@ class HeatmapCard extends LitElement {
         to the column count, so the header row stays aligned with the body.
     */
     date_column_headers() {
+        if (this.is_minute_mode()) { return this.day_column_headers(); }
         const stride = this.column_label_stride();
         const columns = this.ordered_columns();
         const total = columns.length;
@@ -1767,6 +1881,37 @@ class HeatmapCard extends LitElement {
     }
 
     /*
+        Column headers for minute mode in horizontal layout: one header per calendar day,
+        spanning that day's hour columns.
+
+        An hour column is far too narrow for a label of its own, and hour labels thinned
+        by position would drift off the day boundaries. Grouping by day keeps every header
+        aligned with the columns it describes; the hour of any one cell is in its tooltip.
+        A day too narrow to hold its label (the partial first day, usually) gets an empty
+        header rather than one that spills into its neighbour. Before the grid has been
+        measured every day is labelled, matching the label_stride() first-paint policy.
+    */
+    day_column_headers() {
+        const columns = this.ordered_columns();
+        const column_px = (this.grid_width > 0 && columns.length > 0)
+            ? (this.grid_width - ROW_TITLE_WIDTH_PX) / columns.length
+            : 0;
+        const headers = [];
+        var idx = 0;
+        while (idx < columns.length) {
+            const date = columns[idx].entry.date;
+            var span = 1;
+            while (idx + span < columns.length && columns[idx + span].entry.date === date) {
+                span++;
+            }
+            const fits = (column_px === 0) || (span * column_px >= MIN_DATE_LABEL_PX);
+            headers.push(html`<th colspan="${span}">${fits ? date : ''}</th>`);
+            idx += span;
+        }
+        return headers;
+    }
+
+    /*
         Stride for the row titles down the left-hand gutter. Measured against the rendered
         height of the grid, so it adapts to display.height and to the card being resized.
     */
@@ -1777,7 +1922,10 @@ class HeatmapCard extends LitElement {
         if (this.config.orientation === 'horizontal') {
             return this.time_label_stride(this.slot_count());
         }
-        return label_stride(this.grid.length, this.grid_height, MIN_STACKED_LABEL_PX);
+        const stride = label_stride(this.grid.length, this.grid_height, MIN_STACKED_LABEL_PX);
+        // Minute mode rows are hours; keep the labelled hours evenly spaced through the
+        // day. See vertical_row_title().
+        return this.is_minute_mode() ? align_stride(stride, HOUR_ROW_STRIDES) : stride;
     }
 
     /*
@@ -1842,6 +1990,7 @@ class HeatmapCard extends LitElement {
             }
             return day_headers;
         }
+        if (this.is_minute_mode()) { return this.minute_table_headers(); }
         /*
             Generated rather than hardcoded because the column count now depends on
             time_interval. With the defaults (interval 1, automatic labels) this
@@ -1868,6 +2017,22 @@ class HeatmapCard extends LitElement {
             } else {
                 headers.push(html`<th>${String(hour).padStart(2, '0')}</th>`);
             }
+        }
+        return headers;
+    }
+
+    /*
+        Column headers for minute mode in vertical layout: the minutes past the hour,
+        labelled every quarter hour by default with the final slot always labelled and a
+        dot in between - the same conventions as the hourly header above.
+    */
+    minute_table_headers() {
+        const slot_count = this.slot_count() || (60 / this.minute_interval());
+        const stride = this.time_label_stride(slot_count);
+        const headers = [];
+        for (let slot = 0; slot < slot_count; slot++) {
+            const labelled = (slot % stride === 0) || (slot === slot_count - 1);
+            headers.push(html`<th>${labelled ? this.minute_text(slot) : '·'}</th>`);
         }
         return headers;
     }
@@ -2012,6 +2177,8 @@ class HeatmapCard extends LitElement {
                     { weekday: 'short', month: 'short', day: '2-digit' }
                 );
                 content = html`<div class="meta">${date_label}</div><div class="value">${rendered_value}</div>`;
+            } else if (this.is_minute_mode()) {
+                content = html`<div class="meta">${this.minute_cell_window(this.selected_element_data.row, this.selected_element_data.col)}</div><div class="value">${rendered_value}</div>`;
             } else {
                 const date = this.grid[this.selected_element_data.row]?.date;
                 // col is a slot index, which is an hour only when time_interval is 1.
@@ -2029,6 +2196,25 @@ class HeatmapCard extends LitElement {
         return html`
             <div id="tooltip" class="${this.tooltipOpen ? 'active' : 'hidden'}">${content}</div>
         `
+    }
+
+    /*
+        Tooltip heading for a minute-mode cell, e.g. "08 Oct 14:15 - 14:20".
+
+        `row` and `col` arrive as strings from the cell's data-* attributes. The window is
+        offset from the row's hour start on the timeline rather than built with setHours(),
+        so the repeated hour on the night clocks go back still reports its own times.
+    */
+    minute_cell_window(row, col) {
+        const entry = this.grid[parseInt(row)];
+        if (!entry) { return ''; }
+        const interval_ms = this.minute_interval() * 60000;
+        const from = new Date(entry.nativeDate.getTime() + (parseInt(col) * interval_ms));
+        const to = new Date(from.getTime() + interval_ms);
+        const time_format = (this.myhass.locale.time_format === '12')
+            ? new Intl.DateTimeFormat('en-US', { 'hour': 'numeric', 'minute': '2-digit' })
+            : new Intl.DateTimeFormat('sv-SE', { 'hour': 'numeric', 'minute': 'numeric' });
+        return `${entry.date} ${time_format.format(from)} - ${time_format.format(to)}`;
     }
 
     /*
@@ -2213,7 +2399,8 @@ class HeatmapCard extends LitElement {
         then dispatches to either get_recorder() (hourly) or get_recorder_daily() (daily).
     */
     set hass(hass) {
-        if (Date.now() - this.last_render_ts < REFRESH_INTERVAL_MS) {
+        const refresh_ms = this.is_minute_mode() ? MINUTE_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS;
+        if (Date.now() - this.last_render_ts < refresh_ms) {
             return;
         }
         /*
@@ -2356,12 +2543,29 @@ class HeatmapCard extends LitElement {
         // The window ends at `now` unless the user has paged back into history.
         const end = this.view_end();
         this.grid_status = undefined;
-        var startTime = new Date(end.getTime() - (days * 86400000))
-        startTime.setHours(23, 0, 0);
+        /*
+            Minute mode reads 5-minute short-term statistics and lays one row per clock
+            hour, so the window is exactly days * 24 hours ending with the current
+            (partial) hour. Hourly mode keeps its original day-aligned start.
+        */
+        const minute = this.is_minute_mode();
+        var startTime;
+        if (minute) {
+            startTime = new Date(local_hour_start(end).getTime() - (((days * 24) - 1) * 3600000));
+        } else {
+            startTime = new Date(end.getTime() - (days * 86400000))
+            startTime.setHours(23, 0, 0);
+        }
+        const measurement_grid = (data, field) => minute
+            ? this.calculate_minute_values(data, field, false)
+            : this.calculate_measurement_values(data, field);
+        const increasing_grid = (data) => minute
+            ? this.calculate_minute_values(data, 'sum', true)
+            : this.calculate_increasing_values(data);
         this.myhass.callWS({
             'type': 'recorder/statistics_during_period',
             'statistic_ids': consumers,
-            "period":"hour",
+            "period": minute ? "5minute" : "hour",
             "units": {
                 ...this.statistics_units()
             },
@@ -2383,6 +2587,12 @@ class HeatmapCard extends LitElement {
                     if (consumer === this.config.entity) {
                         this.grid = [];
                         this.grid_status = this.myhass.localize('ui.components.data-table.no-data');
+                        // The likeliest cause in minute mode is paging past the short-term
+                        // statistics retention, which the bare "No data" does not explain.
+                        if (minute) {
+                            this.grid_status += '. 5-minute statistics are only kept for the ' +
+                                "recorder's purge_keep_days (10 days by default).";
+                        }
                         return;
                     }
                     grids.push([]);
@@ -2390,7 +2600,7 @@ class HeatmapCard extends LitElement {
                 }
                 switch (this.meta.state_class) {
                     case 'measurement':
-                        grids.push(this.calculate_measurement_values(consumerData));
+                        grids.push(measurement_grid(consumerData, 'mean'));
                         break;
                     case 'total':
                         // `total` covers two different things HA cannot tell apart by
@@ -2402,11 +2612,11 @@ class HeatmapCard extends LitElement {
                         // the latter reading: display its raw per-hour value instead of
                         // a delta. total_increasing is unambiguous and always deltas.
                         grids.push(this.config.treat_as === 'measurement'
-                            ? this.calculate_measurement_values(consumerData, 'state')
-                            : this.calculate_increasing_values(consumerData));
+                            ? measurement_grid(consumerData, 'state')
+                            : increasing_grid(consumerData));
                         break;
                     case 'total_increasing':
-                        grids.push(this.calculate_increasing_values(consumerData));
+                        grids.push(increasing_grid(consumerData));
                         break;
                     default:
                         throw new Error(`Unknown state_class defined (${this.meta['state_class']} for ${consumer}.`);
@@ -2470,7 +2680,7 @@ class HeatmapCard extends LitElement {
           - increasing/total (e.g. energy): missing cells are treated as 0, matching
             calculate_increasing_values() which already fills gaps with 0.
     */
-    combine_cell(primaryVal, secondaryVal, operation, isMeasurement) {
+    combine_cell(primaryVal, secondaryVal, operation, isMeasurement, decimals = 2) {
         if (isMeasurement) {
             if (primaryVal === null || primaryVal === undefined ||
                 secondaryVal === null || secondaryVal === undefined) {
@@ -2480,9 +2690,10 @@ class HeatmapCard extends LitElement {
         const primary = (primaryVal === null || primaryVal === undefined) ? 0 : primaryVal;
         const secondary = (secondaryVal === null || secondaryVal === undefined) ? 0 : secondaryVal;
         const result = (operation === 'sum') ? (primary + secondary) : (primary - secondary);
-        // Round to match calculate_increasing_values()'s 2-decimal precision and avoid
-        // floating point noise (e.g. 0.1 - 0.3) showing up in the tooltip.
-        return parseFloat(result.toFixed(2));
+        // Round to match the grid builders' precision (2 decimals hourly, see
+        // MINUTE_DELTA_DECIMALS for minute mode) and avoid floating point noise
+        // (e.g. 0.1 - 0.3) showing up in the tooltip.
+        return parseFloat(result.toFixed(decimals));
     }
 
     /*
@@ -2497,9 +2708,14 @@ class HeatmapCard extends LitElement {
         that render() expects.
     */
     combine_grids(primary, secondary, operation) {
+        // Minute mode rows are hours, so they align on the hour's start instant; a day
+        // key would match all 24 rows of a day to whichever secondary hour came last.
+        const minute = this.is_minute_mode();
+        const row_key = (row) => minute ? row.nativeDate.getTime() : this.day_key(row.nativeDate);
+        const decimals = minute ? MINUTE_DELTA_DECIMALS : 2;
         const secondaryByDay = new Map();
         for (const row of secondary) {
-            secondaryByDay.set(this.day_key(row.nativeDate), row.vals);
+            secondaryByDay.set(row_key(row), row.vals);
         }
         // A `total` entity running under `treat_as: measurement` (see get_recorder())
         // is displaying raw per-hour readings, not deltas, so it needs measurement's
@@ -2508,9 +2724,9 @@ class HeatmapCard extends LitElement {
             (this.meta.state_class === 'total' && this.config.treat_as === 'measurement');
         const out = [];
         for (const row of primary) {
-            const otherVals = secondaryByDay.get(this.day_key(row.nativeDate)) ?? [];
+            const otherVals = secondaryByDay.get(row_key(row)) ?? [];
             const vals = row.vals.map((primaryVal, hour) =>
-                this.combine_cell(primaryVal, otherVals[hour], operation, isMeasurement)
+                this.combine_cell(primaryVal, otherVals[hour], operation, isMeasurement, decimals)
             );
             out.push({ 'date': row.date, 'nativeDate': row.nativeDate, 'vals': vals });
         }
@@ -2813,6 +3029,78 @@ class HeatmapCard extends LitElement {
     }
 
     /*
+        Build minute-mode grid rows from Statistics API `period: 5minute` data.
+
+        One row per local clock hour, keyed by the instant that hour began (nativeDate),
+        with one slot per 5-minute statistic. `date` is the calendar day, which the
+        tooltip, the navigation range and the midnight row titles show.
+
+        With `as_delta` each slot holds the change in `field` (the running `sum`) since
+        the previous statistic, as calculate_increasing_values() does per hour: missing
+        slots inside an hour are 0 and the very first slot is 0, having nothing to diff
+        against. Without it each slot holds `field` itself ('mean', or 'state' for a
+        `treat_as: measurement` total) and missing slots are null.
+
+        Hours with no statistics at all between the first and last returned are filled
+        with null rows. Hourly mode can get away with skipping a missing day, but a
+        missing hour in a run of hours would silently shift every row above it by an
+        hour against its neighbours. A whole missing hour is "no data", never 0.
+
+        The final row is truncated after the last slot received, stripping slots that
+        have not happened yet. Rows are returned newest first.
+    */
+    calculate_minute_values(consumerData, field, as_delta) {
+        const slots = 60 / STATISTIC_MINUTES;
+        const rows = [];
+        var row = null;
+        var prev_sum = null;
+        var slot = 0;
+        for (const entry of consumerData) {
+            const start = new Date(entry.start);
+            const hour_start = local_hour_start(start);
+            if (row === null || hour_start.getTime() !== row.nativeDate.getTime()) {
+                if (row !== null) {
+                    /*
+                        Step on by local hour starts rather than a fixed 3600000 so the
+                        loop agrees with local_hour_start() everywhere. Requiring each
+                        step to move forward guarantees it terminates.
+                    */
+                    var gap = local_hour_start(new Date(row.nativeDate.getTime() + 3600000));
+                    while (gap.getTime() < hour_start.getTime() &&
+                           gap.getTime() > rows[rows.length - 1].nativeDate.getTime()) {
+                        rows.push(this.minute_row(gap, Array(slots).fill(null)));
+                        gap = local_hour_start(new Date(gap.getTime() + 3600000));
+                    }
+                }
+                row = this.minute_row(hour_start, Array(slots).fill(as_delta ? 0 : null));
+                rows.push(row);
+            }
+            slot = Math.floor(start.getMinutes() / STATISTIC_MINUTES);
+            if (as_delta) {
+                if (prev_sum !== null) {
+                    row.vals[slot] = parseFloat((entry[field] - prev_sum).toFixed(MINUTE_DELTA_DECIMALS));
+                }
+                prev_sum = entry[field];
+            } else {
+                row.vals[slot] = entry[field] ?? null;
+            }
+        }
+        if (row) { row.vals.splice(slot + 1); }
+        return rows.reverse();
+    }
+
+    /*
+        One minute-mode grid row for the hour beginning at `hour_start`.
+    */
+    minute_row(hour_start, vals) {
+        return {
+            'date': format_month_day(hour_start, this.meta.language),
+            'nativeDate': hour_start,
+            'vals': vals
+        };
+    }
+
+    /*
         Builds the meta object from the current hass state and card config.
         Called on every data refresh (from set hass()) before fetching recorder data.
 
@@ -2873,8 +3161,27 @@ class HeatmapCard extends LitElement {
             (!Number.isInteger(config.weeks) || config.weeks < 1 || config.weeks > MAX_WEEKS)) {
             throw new Error(`\`weeks\` must be an integer between 1 and ${MAX_WEEKS}`);
         }
-        if (config.mode && !['hourly', 'daily'].includes(config.mode)) {
-            throw new Error("`mode` must be 'hourly' or 'daily'");
+        if (config.mode && !['hourly', 'daily', 'minute'].includes(config.mode)) {
+            throw new Error("`mode` must be 'hourly', 'daily' or 'minute'");
+        }
+        // Minute mode draws 24 rows per day; see MAX_MINUTE_DAYS for the bound.
+        if (config.mode === 'minute' && config.days > MAX_MINUTE_DAYS) {
+            throw new Error(`\`days\` must be between 1 and ${MAX_MINUTE_DAYS} in minute mode`);
+        }
+        // String from the editor's select, as with time_interval below.
+        if (typeof(config.minute_interval) === 'string' && config.minute_interval.trim() !== '') {
+            const parsed = Number(config.minute_interval);
+            if (Number.isInteger(parsed)) { config = {...config, minute_interval: parsed}; }
+        }
+        if (config.minute_interval !== undefined &&
+            !MINUTE_INTERVALS.includes(config.minute_interval)) {
+            throw new Error(
+                `\`minute_interval\` must be one of ${MINUTE_INTERVALS.join(', ')}`
+            );
+        }
+        if (config.minute_interval !== undefined && config.minute_interval !== STATISTIC_MINUTES &&
+            config.mode !== 'minute') {
+            throw new Error("`minute_interval` is only supported in minute mode");
         }
         if (config.orientation &&
             !['vertical', 'horizontal'].includes(config.orientation)) {
@@ -2895,9 +3202,10 @@ class HeatmapCard extends LitElement {
                 `\`time_interval\` must be one of ${TIME_INTERVALS.join(', ')}`
             );
         }
-        // Daily mode's axis is Monday-Sunday; there are no hours to group.
+        // Daily mode's axis is Monday-Sunday; there are no hours to group. Minute mode's
+        // axis is within one hour, and groups with minute_interval instead.
         if (config.time_interval !== undefined && config.time_interval !== 1 &&
-            (config.mode ?? 'hourly') === 'daily') {
+            (config.mode ?? 'hourly') !== 'hourly') {
             throw new Error("`time_interval` is only supported in hourly mode");
         }
         if (config.aggregate && !['mean', 'min', 'max', 'last'].includes(config.aggregate)) {
@@ -2975,7 +3283,10 @@ class HeatmapCard extends LitElement {
             'orientation': (config.orientation ?? 'vertical'),
             // Hours per cell along the time axis; 1 keeps the original hourly grid.
             'time_interval': (config.time_interval ?? 1),
-            'days': (config.days ?? 21),
+            // Minutes per cell in minute mode; 5 is the raw short-term statistic.
+            'minute_interval': (config.minute_interval ?? STATISTIC_MINUTES),
+            // Minute mode defaults far shorter: each day there is 24 rows, not one.
+            'days': (config.days ?? (config.mode === 'minute' ? DEFAULT_MINUTE_DAYS : 21)),
             'weeks': (config.weeks ?? 12),
             'aggregate': (config.aggregate ?? 'mean'),
             'entity': config.entity,
@@ -3021,9 +3332,17 @@ class HeatmapCard extends LitElement {
     */
     estimated_height_px() {
         const daily = (this.config.mode === 'daily');
-        const data_rows = (this.config.orientation === 'horizontal')
-            ? (daily ? DAYS_PER_WEEK : (24 / (this.config.time_interval ?? 1)))
-            : (daily ? this.config.weeks : this.config.days);
+        const minute = this.is_minute_mode();
+        var data_rows;
+        if (this.config.orientation === 'horizontal') {
+            data_rows = daily ? DAYS_PER_WEEK
+                : minute ? (60 / this.minute_interval())
+                : (24 / (this.config.time_interval ?? 1));
+        } else {
+            data_rows = daily ? this.config.weeks
+                : minute ? (this.config.days * 24)
+                : this.config.days;
+        }
         const grid_px = this.config.display?.height
             ?? (Math.max(1, data_rows) * APPROX_NATURAL_ROW_PX);
 
@@ -3065,12 +3384,18 @@ class HeatmapCard extends LitElement {
             days or weeks were requested. It is therefore near-constant.
         */
         if (this.config.orientation === 'horizontal') {
-            const slots = (this.config.mode === 'daily') ? 7 : 24;
+            const slots = (this.config.mode === 'daily') ? 7
+                : this.is_minute_mode() ? (60 / this.minute_interval())
+                : 24;
             const height = this.config.display?.height ?? (slots * APPROX_NATURAL_ROW_PX);
             return (1 + Math.ceil(height / HA_CARD_SIZE_UNIT_PX));
         }
         if (this.config.mode === 'daily') {
             return (1 + Math.ceil(this.config.weeks / 3));
+        }
+        // One row per hour, at the same rows-per-unit ratio as hourly mode's days.
+        if (this.is_minute_mode()) {
+            return (1 + Math.ceil((this.config.days * 24) / 6));
         }
         if (!this.config.days) {
             return 1;
@@ -4019,12 +4344,30 @@ class HeatmapCardEditor extends LitElement {
         if (this.myhass === undefined || this._config === undefined) { return; }
 
         const is_daily = (this._config.mode === 'daily');
+        const is_minute = (this._config.mode === 'minute');
 
         // Mode selector options
         const mode_options = [
             { value: 'hourly', label: 'Hourly (default)' },
-            { value: 'daily',  label: 'Daily' }
+            { value: 'daily',  label: 'Daily' },
+            { value: 'minute', label: 'High Res Mode' }
         ];
+
+        /*
+            Hover text for the info icon beside Mode. A native title rather than HA's
+            ha-help-tooltip: that element is only registered once some HA panel has
+            loaded it, so in a card editor it can silently render as nothing.
+        */
+        const high_res_tooltip = 'High Res Mode: one row per hour, one column per 5 minutes ' +
+            '(or the minutes per cell you choose), from Home Assistant\'s 5-minute statistics. ' +
+            'For fast-changing sensors. Only covers recent history: 5-minute statistics are ' +
+            'kept for the recorder\'s purge_keep_days, 10 days by default.';
+
+        // Minutes per cell (minute mode only); strings for the same reason as below.
+        const minute_interval_options = MINUTE_INTERVALS.map((minutes) => ({
+            value: String(minutes),
+            label: minutes === STATISTIC_MINUTES ? '5 minutes (default)' : `${minutes} minutes`
+        }));
 
         // Aggregate selector options (only relevant in daily mode)
         const aggregate_options = [
@@ -4075,13 +4418,21 @@ class HeatmapCardEditor extends LitElement {
 
             <ha-expansion-panel header="Data" .expanded=${true}>
                 <div class="section">
-                    <ha-selector
-                        .hass=${this.myhass}
-                        .label=${"Mode"}
-                        .selector=${{select: {options: mode_options}}}
-                        .value=${this._config.mode ?? 'hourly'}
-                        .configValue=${"mode"}
-                    ></ha-selector>
+                    <div class="mode-row">
+                        <ha-selector
+                            .hass=${this.myhass}
+                            .label=${"Mode"}
+                            .selector=${{select: {options: mode_options}}}
+                            .value=${this._config.mode ?? 'hourly'}
+                            .configValue=${"mode"}
+                        ></ha-selector>
+                        <ha-icon
+                            class="info-icon"
+                            icon="mdi:information-outline"
+                            title=${high_res_tooltip}
+                            aria-label=${high_res_tooltip}
+                        ></ha-icon>
+                    </div>
                     ${is_daily ? html`
                         <ha-selector
                             .hass=${this.myhass}
@@ -4097,6 +4448,23 @@ class HeatmapCardEditor extends LitElement {
                             .value=${this._config.aggregate ?? 'mean'}
                             .configValue=${"aggregate"}
                         ></ha-selector>
+                    ` : is_minute ? html`
+                        <ha-selector
+                            .hass=${this.myhass}
+                            .label=${"Days"}
+                            .value=${this._config.days ?? DEFAULT_MINUTE_DAYS}
+                            .selector=${{number: {min: 1, max: MAX_MINUTE_DAYS, mode: 'box', step: 1}}}
+                            .configValue=${"days"}
+                            .helper=${"5-minute statistics are kept for the recorder's purge_keep_days (10 days by default). Older rows will be empty."}
+                        ></ha-selector>
+                        <ha-selector
+                            .hass=${this.myhass}
+                            .label=${"Minutes per cell"}
+                            .selector=${{select: {options: minute_interval_options}}}
+                            .value=${String(this._config.minute_interval ?? STATISTIC_MINUTES)}
+                            .configValue=${"minute_interval"}
+                        ></ha-selector>
+                        ${this.render_treat_as_toggle()}
                     ` : html`
                         <ha-selector
                             .hass=${this.myhass}
@@ -4314,8 +4682,21 @@ class HeatmapCardEditor extends LitElement {
                 in daily mode. Drop it on the switch rather than stranding the user with
                 an error and no control.
             */
-            if (key === 'mode' && val === 'daily' && config['time_interval'] > 1) {
+            if (key === 'mode' && val !== 'hourly' && config['time_interval'] > 1) {
                 delete config['time_interval'];
+            }
+
+            /*
+                Minute mode has its own cell size and a much shorter range (24 rows per
+                day, and short-term statistics only reach back about 10 days). Entering
+                or leaving it drops both, so each mode starts from its own defaults
+                instead of inheriting, say, 21 days of hour rows or a range setConfig
+                rejects.
+            */
+            if (key === 'mode' && val !== this._config.mode &&
+                (val === 'minute' || this._config.mode === 'minute')) {
+                delete config['days'];
+                delete config['minute_interval'];
             }
 
             /*
@@ -4372,6 +4753,20 @@ class HeatmapCardEditor extends LitElement {
         }
         ha-alert[own-margin] {
             margin-bottom: 4px;
+        }
+
+        /* Mode picker with its info icon alongside. */
+        .section > .mode-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .mode-row ha-selector {
+            flex: 1;
+        }
+        .info-icon {
+            color: var(--secondary-text-color);
+            cursor: help;
         }
 
 

@@ -146,6 +146,33 @@ aggregate: mean
 
 Daily mode shows one cell per calendar day. Rows are weeks (Monday-Sunday); columns are labeled Mon-Sun using your locale. The `aggregate` option controls which daily statistic is used - `mean` is suitable for most sensors; use `min` or `max` to highlight daily extremes. Use `last` to plot each day's final hour value instead of an average, for sensors where the end-of-day reading is more representative than the daily mean (for example a heat pump COP). `last` reads the mean of the day's last recorded hour from long-term statistics, so older weeks stay populated; it is not the literal last raw sample (which statistics do not retain for measurement sensors).
 
+### Minute Mode Example
+
+```yaml
+type: custom:heatmap-card
+entity: sensor.house_power
+mode: minute
+days: 2
+minute_interval: 5
+```
+
+Minute mode (shown as **High Res Mode** in the visual editor) is for fast-changing sensors. Each row is one clock hour and each column is a
+slice of that hour (`:00`, `:05`, ... `:55`), built from Home Assistant's 5-minute
+short-term statistics instead of the hourly long-term ones. Rows are labelled by hour, with
+the date shown on each midnight row; in horizontal layout the hours run across the card
+under one header per day, and the minutes run down the side. Click a cell for its exact
+time window.
+
+`minute_interval` groups the 5-minute statistics into larger cells: `5` (default), `10`,
+`15`, `20` or `30`. Values are combined the same way as `time_interval` (averaged for
+`measurement` sensors, summed for `total`/`total_increasing`).
+
+**Minute mode only reaches back as far as your short-term statistics.** Home Assistant
+keeps them for the recorder's `purge_keep_days`, which is 10 days by default; older rows
+simply have no data. `days` defaults to `1` in minute mode and is capped at `31`. Each day
+is 24 rows, so keep the range short in vertical layout or use `orientation: horizontal`.
+The card refreshes every 5 minutes in this mode instead of every 10.
+
 ### Cell Labels Example
 
 ```yaml
@@ -182,7 +209,8 @@ a `measurement` (temperature, humidity) are averaged over the bucket, while `tot
 `total_increasing` sensors (energy, rainfall) are summed, since their hourly values are
 increments. Hours with no data are skipped rather than counted as zero; a cell is blank only
 when nothing at all was recorded in its window. Hourly mode only - daily mode's axis is the
-days of the week.
+days of the week, and minute mode has its own `minute_interval` (see
+[Minute Mode](#minute-mode-example)).
 
 Axis labels are placed automatically: horizontal layout fits as many as the height allows,
 vertical layout labels every four hours. Override with `display.time_labels`, which draws a
@@ -199,7 +227,7 @@ display:
 
 The controls above the grid page through history a screen at a time:
 
-- **Left arrow** - move back one full window (`days` in hourly mode, `weeks` in daily mode)
+- **Left arrow** - move back one full window (`days` in hourly and minute mode, `weeks` in daily mode)
 - **Right arrow** - move forward again; disabled once you are back at the present
 - **Now** - jump straight back to the present; only shown while you are viewing the past
 
@@ -221,14 +249,15 @@ Hide the controls with `display.navigation: false`.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `entity` | string | **required** | Entity ID to display |
-| `secondary_entity` | string | - | Optional second entity to combine per hour (hourly mode only) |
+| `secondary_entity` | string | - | Optional second entity to combine per cell (hourly and minute mode) |
 | `operation` | string | `difference` | How to combine the two entities: `difference` (`entity` - `secondary_entity`) or `sum` |
 | `title` | string | Entity friendly name | Card title |
-| `mode` | string | `hourly` | Heatmap granularity: `hourly` or `daily` |
+| `mode` | string | `hourly` | Heatmap granularity: `hourly`, `daily`, or `minute` (rows are hours, see [Minute Mode](#minute-mode-example)) |
 | `orientation` | string | `vertical` | Grid layout: `vertical` (dates down the side) or `horizontal` (dates across, carpet plot) |
 | `time_interval` | number | `1` | Hours per cell on the time axis: `1`, `2`, `3`, `4`, `6`, `8`, `12` or `24` (hourly mode only) |
+| `minute_interval` | number | `5` | Minutes per cell: `5`, `10`, `15`, `20` or `30` (minute mode only) |
 | `data` | object | - | Data range configuration (see below) |
-| `days` | number | `21` | Days of history to show (hourly mode) |
+| `days` | number | `21` (`1` in minute mode) | Days of history to show (hourly mode: 1-365; minute mode: 1-31) |
 | `weeks` | number | `12` | Weeks of history to show (daily mode) |
 | `aggregate` | string | `mean` | Daily aggregate statistic: `mean`, `min`, `max`, or `last` (daily mode). `last` = final hour's value of each day |
 | `treat_as` | string | - | Set to `measurement` for a `state_class: total` entity that fluctuates (e.g. a live count) rather than accumulates (e.g. an energy meter) - see below |
