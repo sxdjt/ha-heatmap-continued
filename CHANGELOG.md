@@ -2,11 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2026.10.9-beta.1] - 2026-10-09
+## [2026.10.9] - 2026-10-09
 
-Pre-release for testing.
+Supersedes the 2026.9.26-beta.1, 2026.9.28-beta.1, 2026.10.8-beta.1 and 2026.10.9-beta.1
+pre-releases; everything below is the combined change against 2026.9.6. Problems found and
+fixed during that beta cycle are not listed separately, since none of them reached a stable
+release.
 
 ### Added
+- Minute mode (`mode: minute`, "High Res Mode" in the visual editor, with an info icon
+  explaining it) for fast-changing sensors (requested in #17 by @caiusseverus).
+  Rows are clock hours and columns are 5-minute slices of the hour, read from Home
+  Assistant's 5-minute short-term statistics. `minute_interval` groups them into 10, 15, 20
+  or 30-minute cells. Works in both layouts and with `secondary_entity`. Short-term
+  statistics are only kept for the recorder's `purge_keep_days` (10 days by default), so
+  `days` defaults to 1 in this mode and is capped at 31; paging back past the retained data
+  says so instead of showing a bare "No data". Refreshes every 5 minutes instead of 10.
+  Tooltips and legend ticks show 3 decimals, since 5-minute energy deltas are small.
 - `minute_rows: day` for minute mode: one row per day with the day's 5-minute slices
   across it under hour headers, the layout of the original card's `high-res` branch
   (#17, as requested by @caiusseverus). `days` defaults to 7 in this layout and accepts up
@@ -21,33 +33,10 @@ Pre-release for testing.
   never throws, does not round sums to 0.01, and keeps 6 decimals on cell values so the
   shares survive (at 2 decimals hourly smoothing would have shown nothing). The visual
   editor shows it as a switch for total/total_increasing entities only.
-
-### Changed
-- Minute mode tooltips and legend ticks show 3 decimals, matching the precision its cells
-  already kept (a 0.042 kWh cell read as 0.04).
-
-## [2026.10.8-beta.1] - 2026-10-08
-
-Pre-release for testing.
-
-### Added
-- Minute mode (`mode: minute`, "High Res Mode" in the visual editor, with an info icon
-  explaining it) for fast-changing sensors (requested in #17 by @caiusseverus).
-  Rows are clock hours and columns are 5-minute slices of the hour, read from Home
-  Assistant's 5-minute short-term statistics. `minute_interval` groups them into 10, 15, 20
-  or 30-minute cells. Works in both layouts and with `secondary_entity`. Short-term
-  statistics are only kept for the recorder's `purge_keep_days` (10 days by default), so
-  `days` defaults to 1 in this mode and is capped at 31; paging back past the retained data
-  says so instead of showing a bare "No data". Refreshes every 5 minutes instead of 10.
-
-### Fixed
-- A `total` sensor with `treat_as: measurement` had its readings summed instead of averaged
-  when cells were grouped with `time_interval` (or `minute_interval`), so a 2-hour cell over
-  readings of 5 and 7 showed 12 rather than 6, and the auto range was inflated to match.
-
-## [2026.9.28-beta.1] - 2026-09-28
-
-Pre-release for testing.
+- `treat_as: measurement` override for `state_class: total` sensors that fluctuate rather
+  than accumulate (e.g. entity counts), so their heatmap no longer computes meaningless
+  deltas (#16). Cells grouped with `time_interval` or `minute_interval` average these
+  readings rather than summing them.
 
 ### Changed
 - The editor's "Device class" picker (shown only when the entity has no `device_class`
@@ -57,10 +46,6 @@ Pre-release for testing.
   dropdown implied a broader device_class picker than the card actually acts on. Any
   device_class is still valid in YAML; this only changes what the visual editor offers.
 
-### Fixed
-- `treat_as: measurement` override for `state_class: total` sensors that fluctuate rather
-  than accumulate (e.g. entity counts), so their heatmap no longer computes meaningless
-  deltas (#16).
 
 ## [2026.9.6] - 2026-09-06
 
