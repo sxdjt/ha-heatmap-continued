@@ -780,6 +780,30 @@ test('bucket_grid buckets hourly data and leaves daily mode alone', () => {
     assert.deepEqual(Array.from(plain.bucket_grid(grid())[0].vals), [1, 2, 3, 4]);
 });
 
+test('bucket_grid averages a total entity under treat_as: measurement', () => {
+    // e.g. aircraft in range (#16): 5 at 14:00 and 7 at 15:00 is 6 on average, not 12.
+    const grid = () => [{ date: 'd1', vals: [5, 7] }];
+    const treated = makeCard({
+        config: { mode: 'hourly', time_interval: 2, treat_as: 'measurement' },
+        meta: { state_class: 'total' }
+    });
+    assert.deepEqual(Array.from(treated.bucket_grid(grid())[0].vals), [6]);
+
+    // Minute mode goes through the same rule.
+    const minute = makeCard({
+        config: { mode: 'minute', minute_interval: 10, treat_as: 'measurement' },
+        meta: { state_class: 'total' }
+    });
+    assert.deepEqual(Array.from(minute.bucket_grid(grid())[0].vals), [6]);
+
+    // A plain total is a meter: its deltas still add up.
+    const meter = makeCard({
+        config: { mode: 'hourly', time_interval: 2 },
+        meta: { state_class: 'total' }
+    });
+    assert.deepEqual(Array.from(meter.bucket_grid(grid())[0].vals), [12]);
+});
+
 test('bucket_grid preserves row metadata the tooltip depends on', () => {
     const when = new Date(2026, 8, 1);
     const card = makeCard({

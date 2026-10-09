@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
   `days` defaults to 1 in this mode and is capped at 31; paging back past the retained data
   says so instead of showing a bare "No data". Refreshes every 5 minutes instead of 10.
 
+### Fixed
+- A `total` sensor with `treat_as: measurement` had its readings summed instead of averaged
+  when cells were grouped with `time_interval` (or `minute_interval`), so a 2-hour cell over
+  readings of 5 and 7 showed 12 rather than 6, and the auto range was inflated to match.
+
 ## [2026.9.28-beta.1] - 2026-09-28
 
 Pre-release for testing.

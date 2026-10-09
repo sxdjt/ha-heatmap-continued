@@ -1765,11 +1765,23 @@ class HeatmapCard extends LitElement {
             : (this.config.time_interval ?? 1);
         if (interval <= 1) { return grid; }
         // Deltas add up over a longer window; means have to be averaged. See bucket_values.
-        const use_sum = ['total', 'total_increasing'].includes(this.meta.state_class);
+        // A `treat_as: measurement` total holds readings, not deltas, so it is averaged.
+        const use_sum = ['total', 'total_increasing'].includes(this.meta.state_class) &&
+            !this.treated_as_measurement();
         return grid.map((entry) => ({
             ...entry,
             vals: bucket_values(entry.vals, interval, use_sum)
         }));
+    }
+
+    /*
+        True for a `total` entity running under `treat_as: measurement` (see
+        get_recorder()). Its grid holds raw readings rather than deltas, so everything
+        downstream that branches on delta-vs-reading - bucketing, the combine null policy -
+        must treat it as a measurement despite its state_class.
+    */
+    treated_as_measurement() {
+        return this.meta.state_class === 'total' && this.config?.treat_as === 'measurement';
     }
 
     /*
@@ -2721,7 +2733,7 @@ class HeatmapCard extends LitElement {
         // is displaying raw per-hour readings, not deltas, so it needs measurement's
         // null policy too: a missing hour must stay null, not silently become 0.
         const isMeasurement = this.meta.state_class === 'measurement' ||
-            (this.meta.state_class === 'total' && this.config.treat_as === 'measurement');
+            this.treated_as_measurement();
         const out = [];
         for (const row of primary) {
             const otherVals = secondaryByDay.get(row_key(row)) ?? [];
