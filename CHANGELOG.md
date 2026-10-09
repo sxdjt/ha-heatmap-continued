@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2026.10.9-beta.1] - 2026-10-09
+
+Pre-release for testing.
 
 ### Added
 - `minute_rows: day` for minute mode: one row per day with the day's 5-minute slices
