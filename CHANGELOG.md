@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `minute_rows: day` for minute mode: one row per day with the day's 5-minute slices
+  across it under hour headers, the layout of the original card's `high-res` branch
+  (#17, as requested by @caiusseverus). `days` defaults to 7 in this layout and accepts up
+  to 365 for users who keep short-term statistics longer. Works in both orientations, with
+  `minute_interval`, `secondary_entity` and the history browser. The visual editor offers
+  it as a "Rows" choice in High Res Mode. `display.time_labels` counts hours in this
+  layout, and horizontal layout defaults to 2px rows unless `display.height` is set.
+
 ## [2026.10.8-beta.1] - 2026-10-08
 
 Pre-release for testing.

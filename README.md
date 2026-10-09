@@ -173,6 +173,30 @@ simply have no data. `days` defaults to `1` in minute mode and is capped at `31`
 is 24 rows, so keep the range short in vertical layout or use `orientation: horizontal`.
 The card refreshes every 5 minutes in this mode instead of every 10.
 
+#### One row per day
+
+```yaml
+type: custom:heatmap-card
+entity: sensor.house_power
+mode: minute
+minute_rows: day
+days: 10
+```
+
+`minute_rows: day` lays minute mode out like hourly mode: one row per day, with the
+day's 5-minute slices across it (288 cells, or fewer with `minute_interval`) under hour
+headers. This is the layout of the original card's `high-res` branch, and suits looking at
+daily patterns over a longer range. `days` defaults to `7` here and goes up to `365`, so if
+you have raised `purge_keep_days` you can use all of it; days older than that come back
+empty.
+
+In this layout `display.time_labels` counts hours rather than cells. In horizontal layout
+the times of day run down the side, and unless `display.height` is set each row is drawn
+2px tall so the card stays a sensible height. Around daylight saving changes cells follow
+the clock, as hourly mode does: the hour skipped in spring is blank, and the hour repeated
+in autumn shares its cells (energy deltas are added together, so the day's total is
+right).
+
 ### Cell Labels Example
 
 ```yaml
@@ -256,8 +280,9 @@ Hide the controls with `display.navigation: false`.
 | `orientation` | string | `vertical` | Grid layout: `vertical` (dates down the side) or `horizontal` (dates across, carpet plot) |
 | `time_interval` | number | `1` | Hours per cell on the time axis: `1`, `2`, `3`, `4`, `6`, `8`, `12` or `24` (hourly mode only) |
 | `minute_interval` | number | `5` | Minutes per cell: `5`, `10`, `15`, `20` or `30` (minute mode only) |
+| `minute_rows` | string | `hour` | Minute mode rows: `hour` (one row per clock hour) or `day` (one row per day, see [One row per day](#one-row-per-day)) |
 | `data` | object | - | Data range configuration (see below) |
-| `days` | number | `21` (`1` in minute mode) | Days of history to show (hourly mode: 1-365; minute mode: 1-31) |
+| `days` | number | `21` (`1` in minute mode, `7` with `minute_rows: day`) | Days of history to show (hourly mode: 1-365; minute mode: 1-31, or 1-365 with `minute_rows: day`) |
 | `weeks` | number | `12` | Weeks of history to show (daily mode) |
 | `aggregate` | string | `mean` | Daily aggregate statistic: `mean`, `min`, `max`, or `last` (daily mode). `last` = final hour's value of each day |
 | `treat_as` | string | - | Set to `measurement` for a `state_class: total` entity that fluctuates (e.g. a live count) rather than accumulates (e.g. an energy meter) - see below |
@@ -282,7 +307,7 @@ Hide the controls with `display.navigation: false`.
 | `display.decimals` | number | Auto | Fixed decimal places for cell labels and legend tick labels |
 | `display.height` | number | Auto | Fixed height in pixels for the grid; cells and date labels adapt to fit |
 | `display.navigation` | boolean | `true` | Show the history navigation controls above the grid |
-| `display.time_labels` | number | Auto | Label every Nth slot on the time axis; omit to let the card choose |
+| `display.time_labels` | number | Auto | Label every Nth slot on the time axis (every Nth hour with `minute_rows: day`); omit to let the card choose |
 
 ---
 
