@@ -12,6 +12,17 @@ All notable changes to this project will be documented in this file.
   `minute_interval`, `secondary_entity` and the history browser. The visual editor offers
   it as a "Rows" choice in High Res Mode. `display.time_labels` counts hours in this
   layout, and horizontal layout defaults to 2px rows unless `display.height` is set.
+- `smoothing: true` for `total`/`total_increasing` sensors in hourly and minute mode, also
+  from the `high-res` branch: each step of a low-precision meter is shared evenly across
+  the flat stretch before it, so a 0.01 kWh step after three idle 5-minute periods reads as
+  four cells of 0.0025 instead of 0, 0, 0, 0.01. Totals are preserved. Unlike upstream it
+  never throws, does not round sums to 0.01, and keeps 6 decimals on cell values so the
+  shares survive (at 2 decimals hourly smoothing would have shown nothing). The visual
+  editor shows it as a switch for total/total_increasing entities only.
+
+### Changed
+- Minute mode tooltips and legend ticks show 3 decimals, matching the precision its cells
+  already kept (a 0.042 kWh cell read as 0.04).
 
 ## [2026.10.8-beta.1] - 2026-10-08
 

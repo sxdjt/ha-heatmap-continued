@@ -52,6 +52,7 @@ function loadCard() {
             label_stride,
             align_stride,
             local_hour_start,
+            smooth_plateaus,
             MINUTE_INTERVALS,
             bucket_values,
             format_month_day,

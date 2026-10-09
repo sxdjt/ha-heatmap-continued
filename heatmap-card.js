@@ -973,6 +973,13 @@ const HOUR_ROW_STRIDES = [1, 2, 3, 4, 6, 12, 24];
     makes neighbouring cells look identical. 3 places is watt-hour resolution.
 */
 const MINUTE_DELTA_DECIMALS = 3;
+/*
+    Decimal places kept on deltas when `smoothing` is on. The whole point of smoothing is
+    to show shares of a step smaller than the sensor reports: 0.01 kWh over four hours is
+    0.0025 an hour, which 2 places rounds to 0.00 - smoothing would show nothing at all.
+    6 places is well below any real meter while still trimming floating point noise.
+*/
+const SMOOTHED_DELTA_DECIMALS = 6;
 // 5-minute statistics land every 5 minutes, so refresh twice as often as hourly mode.
 const MINUTE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -1098,6 +1105,49 @@ function label_stride(label_count, available_px, min_px_per_label) {
 */
 function align_stride(stride, allowed) {
     return allowed.find((value) => value >= stride) ?? allowed[allowed.length - 1];
+}
+
+/*
+    Spread each step of a coarse running total evenly over the flat stretch before it
+    (`smoothing: true`, ported from the upstream high-res branch).
+
+    A meter that only reports 0.01 kWh steps, sampled every 5 minutes at a 30 W load,
+    reads 10.00, 10.00, 10.00, 10.01: three cells of 0 and one of 0.01 instead of four of
+    0.0025. Here every run of equal sums (a plateau) is replaced by a straight ramp from its
+    own value to the value that ends it, so each statistic in the run takes an equal share
+    of the step. Totals are preserved exactly: the ramp ends where the next plateau starts.
+
+    Rules, which differ from upstream on purpose:
+      - No rounding of the smoothed sums. Upstream rounded to 0.01 whatever the sensor's
+        precision; the grid builders already round the deltas they produce.
+      - Never throws. Upstream raised an error if rounding drifted the total.
+      - A null sum is left alone and ends the plateau before it unsmoothed: there is no
+        step to share out across a gap in the data.
+      - The final plateau is left flat. Its step has not happened yet, so there is
+        nothing to spread, and inventing one would show usage that has not been measured.
+
+    Returns a new array; entries are shallow-copied, never mutated.
+*/
+function smooth_plateaus(entries, field = 'sum') {
+    const out = entries.map((entry) => ({ ...entry }));
+    var start = 0;
+    for (let i = 1; i <= out.length; i++) {
+        const value = out[start]?.[field];
+        if (i < out.length && out[i][field] === value) { continue; }
+        // out[start..i-1] is one plateau; out[i] (if any) is the first entry after it.
+        const next = out[i]?.[field];
+        const ramps = (value !== null && value !== undefined) &&
+            (next !== null && next !== undefined);
+        if (ramps) {
+            const length = i - start;
+            const step = (next - value) / length;
+            for (let j = 1; j < length; j++) {
+                out[start + j][field] = value + (step * j);
+            }
+        }
+        start = i;
+    }
+    return out;
 }
 
 /*
@@ -1723,6 +1773,16 @@ class HeatmapCard extends LitElement {
     }
 
     /*
+        Decimal places kept on deltas, and shown in the tooltip and legend: 2 in hourly
+        mode, MINUTE_DELTA_DECIMALS in minute mode, SMOOTHED_DELTA_DECIMALS when smoothing.
+        Optional chaining for the bare objects the unit tests build.
+    */
+    delta_decimals() {
+        if (this.config?.smoothing === true) { return SMOOTHED_DELTA_DECIMALS; }
+        return this.is_minute_mode() ? MINUTE_DELTA_DECIMALS : 2;
+    }
+
+    /*
         Minutes covered by one cell in minute mode.
     */
     minute_interval() {
@@ -2305,7 +2365,7 @@ class HeatmapCard extends LitElement {
             if (this.selected_element_data.val === '') {
                 rendered_value = this.myhass.localize('ui.components.data-table.no-data'); // "No data"
             } else {
-                const val = +(parseFloat(this.selected_element_data.val).toFixed(2));
+                const val = +(parseFloat(this.selected_element_data.val).toFixed(this.delta_decimals()));
                 rendered_value = `${val} ${this.meta.scale.unit || this.meta.unit_of_measurement}`;
             }
 
@@ -2392,7 +2452,7 @@ class HeatmapCard extends LitElement {
                 ticks.push(
                     [
                         i * 20,
-                        +(Number(this.meta.data.min + (diff / 5) * i).toFixed(2))
+                        +(Number(this.meta.data.min + (diff / 5) * i).toFixed(this.delta_decimals()))
                     ]
                 )}
         } else {
@@ -2721,9 +2781,14 @@ class HeatmapCard extends LitElement {
         const measurement_grid = (data, field) => minute
             ? minute_grid(data, field, false)
             : this.calculate_measurement_values(data, field);
-        const increasing_grid = (data) => minute
-            ? minute_grid(data, 'sum', true)
-            : this.calculate_increasing_values(data);
+        // smoothing reshapes the running sum before any delta is taken, so every builder,
+        // bucket and combine downstream sees the smoothed values. See smooth_plateaus().
+        const increasing_grid = (raw) => {
+            const data = this.config.smoothing ? smooth_plateaus(raw) : raw;
+            return minute
+                ? minute_grid(data, 'sum', true)
+                : this.calculate_increasing_values(data);
+        };
         this.myhass.callWS({
             'type': 'recorder/statistics_during_period',
             'statistic_ids': consumers,
@@ -2852,8 +2917,8 @@ class HeatmapCard extends LitElement {
         const primary = (primaryVal === null || primaryVal === undefined) ? 0 : primaryVal;
         const secondary = (secondaryVal === null || secondaryVal === undefined) ? 0 : secondaryVal;
         const result = (operation === 'sum') ? (primary + secondary) : (primary - secondary);
-        // Round to match the grid builders' precision (2 decimals hourly, see
-        // MINUTE_DELTA_DECIMALS for minute mode) and avoid floating point noise
+        // Round to match the grid builders' precision (see delta_decimals()) and
+        // avoid floating point noise
         // (e.g. 0.1 - 0.3) showing up in the tooltip.
         return parseFloat(result.toFixed(decimals));
     }
@@ -2874,7 +2939,7 @@ class HeatmapCard extends LitElement {
         // all 24 rows of a day to whichever secondary hour came last. Day rows are days.
         const hour_rows = this.is_minute_hour_rows();
         const row_key = (row) => hour_rows ? row.nativeDate.getTime() : this.day_key(row.nativeDate);
-        const decimals = this.is_minute_mode() ? MINUTE_DELTA_DECIMALS : 2;
+        const decimals = this.delta_decimals();
         const secondaryByDay = new Map();
         for (const row of secondary) {
             secondaryByDay.set(row_key(row), row.vals);
@@ -3178,7 +3243,7 @@ class HeatmapCard extends LitElement {
             }
             if (prev_sum !== null) {
                 // Compute hourly delta from the running total. First entry has no prior sum, stays 0.
-                gridTemp[hour] = parseFloat((entry.sum - prev_sum).toFixed(2));
+                gridTemp[hour] = parseFloat((entry.sum - prev_sum).toFixed(this.delta_decimals()));
             }
             prev_sum = entry.sum;
         }
@@ -3240,7 +3305,7 @@ class HeatmapCard extends LitElement {
             slot = Math.floor(start.getMinutes() / STATISTIC_MINUTES);
             if (as_delta) {
                 if (prev_sum !== null) {
-                    row.vals[slot] = parseFloat((entry[field] - prev_sum).toFixed(MINUTE_DELTA_DECIMALS));
+                    row.vals[slot] = parseFloat((entry[field] - prev_sum).toFixed(this.delta_decimals()));
                 }
                 prev_sum = entry[field];
             } else {
@@ -3299,7 +3364,7 @@ class HeatmapCard extends LitElement {
             if (as_delta) {
                 if (prev_sum !== null) {
                     row.vals[slot] = parseFloat(
-                        (row.vals[slot] + (entry[field] - prev_sum)).toFixed(MINUTE_DELTA_DECIMALS)
+                        (row.vals[slot] + (entry[field] - prev_sum)).toFixed(this.delta_decimals())
                     );
                 }
                 prev_sum = entry[field];
@@ -3450,6 +3515,13 @@ class HeatmapCard extends LitElement {
         if (config.treat_as !== undefined && config.treat_as !== 'measurement') {
             throw new Error("`treat_as` must be 'measurement'");
         }
+        // Like treat_as, only acts on total/total_increasing entities; ignored otherwise.
+        if (config.smoothing !== undefined && typeof(config.smoothing) !== 'boolean') {
+            throw new Error("`smoothing` must be a boolean");
+        }
+        if (config.smoothing === true && config.mode === 'daily') {
+            throw new Error("`smoothing` is only supported in hourly and minute mode");
+        }
         // Multi-entity combination relies on hourly sum/delta alignment. Daily mode
         // aggregates by mean/min/max, which are not meaningful to subtract, so reject it.
         if (config.secondary_entity && (config.mode ?? 'hourly') === 'daily') {
@@ -3529,6 +3601,7 @@ class HeatmapCard extends LitElement {
             'secondary_entity': config.secondary_entity,
             'operation': (config.operation ?? 'difference'),
             'treat_as': config.treat_as,
+            'smoothing': (config.smoothing ?? false),
             'scale': config.scale,
             'data': (config.data ?? {}),
             'display': (config.display ?? {})
@@ -4099,6 +4172,34 @@ class HeatmapCardEditor extends LitElement {
                             config.treat_as = 'measurement';
                         } else {
                             delete config.treat_as;
+                        }
+                        this._dispatch_config(config);
+                    }}
+                ></ha-switch>
+            </ha-formfield>
+        `;
+    }
+
+    /*
+        Switch for `smoothing` (see smooth_plateaus()). Only shown where it does
+        something: a total/total_increasing entity whose readings are being diffed, which
+        rules out `treat_as: measurement`. Hidden rather than disabled, as the treat_as
+        switch above is.
+    */
+    render_smoothing_toggle() {
+        const state_class = this.entity?.attributes?.state_class;
+        if (!['total', 'total_increasing'].includes(state_class)) { return ''; }
+        if (this._config.treat_as === 'measurement') { return ''; }
+        return html`
+            <ha-formfield .label=${"Smooth low-precision readings"}>
+                <ha-switch
+                    .checked=${this._config.smoothing === true}
+                    @change=${(e) => {
+                        const config = deep_clone(this._config);
+                        if (e.target.checked) {
+                            config.smoothing = true;
+                        } else {
+                            delete config.smoothing;
                         }
                         this._dispatch_config(config);
                     }}
@@ -4715,6 +4816,7 @@ class HeatmapCardEditor extends LitElement {
                             .configValue=${"minute_interval"}
                         ></ha-selector>
                         ${this.render_treat_as_toggle()}
+                        ${this.render_smoothing_toggle()}
                     ` : html`
                         <ha-selector
                             .hass=${this.myhass}
@@ -4731,6 +4833,7 @@ class HeatmapCardEditor extends LitElement {
                             .configValue=${"time_interval"}
                         ></ha-selector>
                         ${this.render_treat_as_toggle()}
+                        ${this.render_smoothing_toggle()}
                     `}
                     ${this.render_multi_entity()}
                 </div>
@@ -4920,6 +5023,10 @@ class HeatmapCardEditor extends LitElement {
                 control left to clear them. Also restore the device-class default scale
                 if the 'net energy' suggestion was applied for the secondary entity.
             */
+            // Smoothing has no daily-mode equivalent either; setConfig rejects it there.
+            if (key === 'mode' && val === 'daily') {
+                delete config['smoothing'];
+            }
             if (key === 'mode' && val === 'daily' && config['secondary_entity']) {
                 delete config['secondary_entity'];
                 delete config['operation'];

@@ -117,6 +117,27 @@ feeding a `utility_meter`) and point the card at that - see
 
 Both entities must be recorded the same way: either both `state_class: measurement`, or both `total`/`total_increasing`. Mixing the two is not meaningful (one records hourly averages, the other hourly deltas), and the card shows an error instead of rendering. Energy sensors are converted to kWh automatically; for other device classes, make sure both entities use the same unit.
 
+### Low-precision energy sensors (smoothing)
+
+```yaml
+type: custom:heatmap-card
+entity: sensor.fridge_energy
+mode: minute
+smoothing: true
+```
+
+A meter that only reports in 0.01 kWh steps shows a light, steady load as a row of zeros
+with an occasional 0.01 spike, because most 5-minute (or hourly) periods see no change in
+the reading at all. `smoothing: true` shares each step out evenly across the flat stretch
+before it, so four 5-minute cells ahead of a 0.01 kWh step show 0.0025 each instead of
+0, 0, 0, 0.01. Totals are unchanged. The most recent flat stretch stays at zero, since its
+step has not happened yet.
+
+Applies to `total` and `total_increasing` entities in hourly and minute mode, and is
+ignored for `measurement` entities and with `treat_as: measurement`. Cell values keep 6
+decimal places while it is on, so the shares are not rounded away. Ported from the
+original card's `high-res` branch.
+
 ### Horizontal (Carpet Plot) Example
 
 ```yaml
@@ -285,6 +306,7 @@ Hide the controls with `display.navigation: false`.
 | `days` | number | `21` (`1` in minute mode, `7` with `minute_rows: day`) | Days of history to show (hourly mode: 1-365; minute mode: 1-31, or 1-365 with `minute_rows: day`) |
 | `weeks` | number | `12` | Weeks of history to show (daily mode) |
 | `aggregate` | string | `mean` | Daily aggregate statistic: `mean`, `min`, `max`, or `last` (daily mode). `last` = final hour's value of each day |
+| `smoothing` | boolean | `false` | Spread each step of a low-precision `total`/`total_increasing` sensor over the flat stretch before it (hourly and minute mode) - see [Low-precision energy sensors](#low-precision-energy-sensors-smoothing) |
 | `treat_as` | string | - | Set to `measurement` for a `state_class: total` entity that fluctuates (e.g. a live count) rather than accumulates (e.g. an energy meter) - see below |
 | `device_class` | string | From entity | Override device class for scale auto-selection |
 | `display` | object | - | Display options (see below) |
