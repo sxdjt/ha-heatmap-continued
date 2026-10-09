@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2026.10.8-beta.1] - 2026-10-08
+
+Pre-release for testing.
 
 ### Added
 - Minute mode (`mode: minute`, "High Res Mode" in the visual editor, with an info icon
