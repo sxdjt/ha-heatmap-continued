@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.11.4] - 2026-11-04
+
+### Fixed
+- Updated to support visual editor changes in 2026.11
+
 ## [2026.10.9] - 2026-10-09
 
 Supersedes the 2026.9.26-beta.1, 2026.9.28-beta.1, 2026.10.8-beta.1 and 2026.10.9-beta.1
