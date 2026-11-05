@@ -4134,7 +4134,8 @@ class HeatmapCardEditor extends LitElement {
         if (!this.entity || this.entity.attributes.device_class) { return; }
 
         return html`
-            <ha-formfield .label=${"Temperature F/C"}>
+            <div class="toggle-row">
+                <label>Temperature F/C</label>
                 <ha-switch
                     .checked=${this._config.device_class === 'temperature'}
                     @change=${(e) => {
@@ -4148,7 +4149,7 @@ class HeatmapCardEditor extends LitElement {
                         this._dispatch_config(config);
                     }}
                 ></ha-switch>
-            </ha-formfield>
+            </div>
         `;
     }
 
@@ -4163,7 +4164,8 @@ class HeatmapCardEditor extends LitElement {
     render_treat_as_toggle() {
         if (this.entity?.attributes?.state_class !== 'total') { return ''; }
         return html`
-            <ha-formfield .label=${"Treat as fluctuating value (not a cumulative meter)"}>
+            <div class="toggle-row">
+                <label>Treat as fluctuating value (not a cumulative meter)</label>
                 <ha-switch
                     .checked=${this._config.treat_as === 'measurement'}
                     @change=${(e) => {
@@ -4176,7 +4178,7 @@ class HeatmapCardEditor extends LitElement {
                         this._dispatch_config(config);
                     }}
                 ></ha-switch>
-            </ha-formfield>
+            </div>
         `;
     }
 
@@ -4191,7 +4193,8 @@ class HeatmapCardEditor extends LitElement {
         if (!['total', 'total_increasing'].includes(state_class)) { return ''; }
         if (this._config.treat_as === 'measurement') { return ''; }
         return html`
-            <ha-formfield .label=${"Smooth low-precision readings"}>
+            <div class="toggle-row">
+                <label>Smooth low-precision readings</label>
                 <ha-switch
                     .checked=${this._config.smoothing === true}
                     @change=${(e) => {
@@ -4204,7 +4207,7 @@ class HeatmapCardEditor extends LitElement {
                         this._dispatch_config(config);
                     }}
                 ></ha-switch>
-            </ha-formfield>
+            </div>
         `;
     }
 
@@ -4305,13 +4308,15 @@ class HeatmapCardEditor extends LitElement {
                         this._dispatch_config(config);
                     }}
                 >
-                <ha-formfield .label=${"Infer from the sensor data"} @change=${this.update_field}>
+                <div class="checkbox-row">
                     <ha-checkbox
                         .checked=${minAuto}
                         .value=${"auto"}
                         .configValue=${"data.min"}
+                        @change=${this.update_field}
                     ></ha-checkbox>
-                </ha-formfield>
+                    <label>Infer from the sensor data</label>
+                </div>
             </div>
             <div>
                 <input
@@ -4328,13 +4333,15 @@ class HeatmapCardEditor extends LitElement {
                         this._dispatch_config(config);
                     }}
                 >
-                <ha-formfield .label=${"Infer from the sensor data"} @change=${this.update_field}>
+                <div class="checkbox-row">
                     <ha-checkbox
                         .checked=${maxAuto}
                         .value=${"auto"}
                         .configValue=${"data.max"}
+                        @change=${this.update_field}
                     ></ha-checkbox>
-                </ha-formfield>
+                    <label>Infer from the sensor data</label>
+                </div>
             </div>
         `;
     }
@@ -4870,7 +4877,8 @@ class HeatmapCardEditor extends LitElement {
 
             <ha-expansion-panel header="Card elements" .expanded=${false}>
                 <div class="section">
-                    <ha-formfield .label=${"Show history navigation"}>
+                    <div class="toggle-row">
+                        <label>Show history navigation</label>
                         <ha-switch
                             .checked=${this._config.display?.navigation !== false}
                             @change=${(e) => {
@@ -4880,8 +4888,9 @@ class HeatmapCardEditor extends LitElement {
                                 this._dispatch_config(config);
                             }}
                         ></ha-switch>
-                    </ha-formfield>
-                    <ha-formfield .label=${"Show legend"}>
+                    </div>
+                    <div class="toggle-row">
+                        <label>Show legend</label>
                         <ha-switch
                             .checked=${this._config.display?.legend !== false}
                             @change=${(e) => {
@@ -4891,8 +4900,9 @@ class HeatmapCardEditor extends LitElement {
                                 this._dispatch_config(config);
                             }}
                         ></ha-switch>
-                    </ha-formfield>
-                    <ha-formfield .label=${"Show cell labels"}>
+                    </div>
+                    <div class="toggle-row">
+                        <label>Show cell labels</label>
                         <ha-switch
                             .checked=${this._config.display?.labels === true}
                             @change=${(e) => {
@@ -4902,9 +4912,10 @@ class HeatmapCardEditor extends LitElement {
                                 this._dispatch_config(config);
                             }}
                         ></ha-switch>
-                    </ha-formfield>
+                    </div>
                     ${this._config.display?.labels === true ? html`
-                        <ha-formfield .label=${"Hide zero values in labels"}>
+                        <div class="toggle-row">
+                            <label>Hide zero values in labels</label>
                             <ha-switch
                                 .checked=${this._config.display?.hide_zero === true}
                                 @change=${(e) => {
@@ -4914,7 +4925,7 @@ class HeatmapCardEditor extends LitElement {
                                     this._dispatch_config(config);
                                 }}
                             ></ha-switch>
-                        </ha-formfield>
+                        </div>
                     ` : ''}
                     <ha-selector
                         .hass=${this.myhass}
@@ -5135,6 +5146,30 @@ class HeatmapCardEditor extends LitElement {
         .info-icon {
             color: var(--secondary-text-color);
             cursor: help;
+        }
+
+        /*
+            Label + switch/checkbox rows. Replaces ha-formfield, which HA removed in 2026.11
+            (a leftover one renders no label). Plain markup rather than the slotted label HA
+            now suggests, so labels still show on releases before 2026.11. The selectors
+            outrank the display: block on .root/.section children above.
+        */
+        .root > .toggle-row,
+        .section > .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .toggle-row label,
+        .checkbox-row label {
+            font-size: 14px;
+            color: var(--primary-text-color);
         }
 
 
