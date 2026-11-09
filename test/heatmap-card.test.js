@@ -901,47 +901,29 @@ test('setConfig accepts the string time_interval the editor emits', () => {
     );
 });
 
-test('getGridOptions reports sizing so sections view can resize the card', () => {
+test('getGridOptions lets the card take its natural height in sections view', () => {
     const opts = (cfg) => {
         const card = makeCard();
         card.setConfig({ entity: 'sensor.t', ...cfg });
         return card.getGridOptions();
     };
 
+    // A row-count estimate left gaps or overlapped the next card (#19); 'auto' follows
+    // the rendered content whatever the title, range, legend or layout.
+    for (const cfg of [{}, { days: 7 }, { days: 365 }, { title: '' },
+                       { orientation: 'horizontal' }, { display: { height: 300 } }]) {
+        assert.equal(opts(cfg).rows, 'auto', JSON.stringify(cfg));
+    }
+
     const vertical = opts({ days: 21 });
     assert.equal(vertical.columns, 12);
-    assert.ok(vertical.rows >= 1);
-    assert.equal(vertical.min_rows, 2);
+    // A height limit would be meaningless for an auto-height card.
+    assert.equal(vertical.min_rows, undefined);
     // No maximum: resizing beyond the default is the user's call.
-    assert.equal(vertical.max_rows, undefined);
-
-    // Vertical grows with the range; horizontal does not.
-    assert.ok(opts({ days: 365 }).rows > opts({ days: 21 }).rows);
-    assert.equal(opts({ orientation: 'horizontal', days: 365 }).rows,
-                 opts({ orientation: 'horizontal', days: 21 }).rows);
-    assert.ok(opts({ orientation: 'horizontal', days: 365 }).rows < opts({ days: 365 }).rows);
-
-    // An explicit height overrides the estimate.
-    assert.ok(opts({ days: 365, display: { height: 300 } }).rows < opts({ days: 365 }).rows);
-
-    // Bigger buckets mean fewer rows in horizontal layout.
-    assert.ok(opts({ orientation: 'horizontal', time_interval: 4 }).rows
-            < opts({ orientation: 'horizontal', time_interval: 1 }).rows);
+    assert.equal(vertical.max_columns, undefined);
 
     // Horizontal needs more width to be legible.
     assert.ok(opts({ orientation: 'horizontal' }).min_columns > opts({}).min_columns);
-});
-
-test('estimated_height_px accounts for the optional furniture', () => {
-    const height = (cfg) => {
-        const card = makeCard();
-        card.setConfig({ entity: 'sensor.t', ...cfg });
-        return card.estimated_height_px();
-    };
-    const full = height({});
-    assert.ok(height({ display: { legend: false } }) < full, 'hiding the legend should shorten the card');
-    assert.ok(height({ display: { navigation: false } }) < full, 'hiding nav should shorten the card');
-    assert.ok(height({ display: { legend: false, navigation: false } }) < height({ display: { legend: false } }));
 });
 
 test('time_axis_label marks skipped rows so thinning cannot be misread', () => {

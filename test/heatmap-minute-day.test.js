@@ -261,10 +261,9 @@ test('setConfig accepts minute_rows with its own range and default', () => {
 
 test('day-row sizing counts days vertically and the compact height horizontally', () => {
     const vertical = (days) => dayRowCard({ days, orientation: 'vertical' });
-    assert.ok(vertical(30).estimated_height_px() > vertical(7).estimated_height_px());
+    assert.ok(vertical(30).getCardSize() > vertical(7).getCardSize());
     // Same as hourly mode for the same number of days.
     const hourly = makeCard({ config: { mode: 'hourly', days: 30, display: {} } });
-    assert.equal(vertical(30).estimated_height_px(), hourly.estimated_height_px());
     assert.equal(vertical(30).getCardSize(), hourly.getCardSize());
 
     const horizontal = dayRowCard({ days: 7, orientation: 'horizontal' });

@@ -357,10 +357,10 @@ test('setConfig validates minute_interval and the minute-mode range', () => {
 });
 
 test('minute mode sizing counts hour rows vertically and minute slots horizontally', () => {
-    const height = (config) => minuteCard({ days: 1, ...config }).estimated_height_px();
-    assert.ok(height({ orientation: 'vertical', days: 2 }) > height({ orientation: 'vertical', days: 1 }));
-    assert.ok(height({ orientation: 'horizontal', minute_interval: 5 })
-            > height({ orientation: 'horizontal', minute_interval: 30 }));
+    const size = (config) => minuteCard({ days: 1, ...config }).getCardSize();
+    assert.ok(size({ orientation: 'vertical', days: 2 }) > size({ orientation: 'vertical', days: 1 }));
+    assert.ok(size({ orientation: 'horizontal', minute_interval: 5 })
+            > size({ orientation: 'horizontal', minute_interval: 30 }));
     assert.equal(minuteCard({ orientation: 'vertical', days: 1 }).getCardSize(), 5);
 });
 

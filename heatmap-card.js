@@ -1026,24 +1026,8 @@ const APPROX_NATURAL_ROW_PX = 14;
 // Home Assistant sizes cards in units of roughly this many pixels.
 const HA_CARD_SIZE_UNIT_PX = 50;
 
-/*
-    Sections-view grid geometry, from the Home Assistant custom card documentation: each
-    section is 12 columns wide, a grid row is 56px tall, and there is an 8px gap between
-    rows. getGridOptions() converts an estimated pixel height into whole grid rows.
-*/
-const GRID_ROW_HEIGHT_PX = 56;
-const GRID_GAP_PX = 8;
+// Sections-view width in columns, from the Home Assistant custom card documentation.
 const SECTION_COLUMNS = 12;
-
-/*
-    Rough heights of the fixed furniture around the grid, used only to estimate how many
-    grid rows the card needs. Approximate on purpose - the real layout still comes from
-    the browser, and being a row out simply means the user drags the handle once.
-*/
-const CARD_TITLE_PX = 48;
-const NAV_ROW_PX = 38;
-const COLUMN_HEADER_PX = 24;
-const LEGEND_PX = 70;
 
 // Width of the row-title gutter. Must stay in step with `.hm-row-title` in static styles.
 const ROW_TITLE_WIDTH_PX = 50;
@@ -3628,41 +3612,15 @@ class HeatmapCard extends LitElement {
         this.view_offset = 0;
     }
   
-    // The height of your card. Home Assistant uses this to automatically
-    // distribute all cards over the available columns.
-    /*
-        Estimated rendered height of the whole card in pixels.
-
-        Used for sizing hints only. The number of data rows is taken from the config
-        rather than the fetched grid, so a sensible size is reported before any data has
-        arrived - Home Assistant asks for sizing as soon as the card is created.
-    */
-    estimated_height_px() {
-        const daily = (this.config.mode === 'daily');
-        const minute = this.is_minute_hour_rows();
-        var data_rows;
-        if (this.config.orientation === 'horizontal') {
-            data_rows = daily ? DAYS_PER_WEEK
-                : minute ? (60 / this.minute_interval())
-                : (24 / (this.config.time_interval ?? 1));
-        } else {
-            // Day rows count like hourly mode: one row per day.
-            data_rows = daily ? this.config.weeks
-                : minute ? (this.config.days * 24)
-                : this.config.days;
-        }
-        const grid_px = this.grid_height_px()
-            ?? (Math.max(1, data_rows) * APPROX_NATURAL_ROW_PX);
-
-        var total = grid_px + COLUMN_HEADER_PX + CARD_TITLE_PX;
-        if (this.config.display?.navigation !== false) { total += NAV_ROW_PX; }
-        if (this.config.display?.legend !== false) { total += LEGEND_PX; }
-        return total;
-    }
-
     /*
         Sizing for the sections view. Without this method Home Assistant reports that the
         card "does not fully support resizing yet".
+
+        Height is "auto": the card is exactly as tall as its content (#19). An estimate in
+        whole 56px grid rows was always wrong by part of a row, and the error swung both
+        ways with the title, range and legend - a gap below some cards, the legend running
+        into the next card on others. The grid's height is already configurable with
+        display.height, so nothing is lost by giving up the row handle.
 
         Horizontal layout is meant for full-width sections and needs the width to spread
         its columns over, so it asks for more of the section by default and refuses to be
@@ -3670,20 +3628,18 @@ class HeatmapCard extends LitElement {
         the point of the sections view is that the user gets to decide.
     */
     getGridOptions() {
-        const rows = Math.max(
-            1,
-            Math.ceil((this.estimated_height_px() + GRID_GAP_PX) / (GRID_ROW_HEIGHT_PX + GRID_GAP_PX))
-        );
         const horizontal = (this.config.orientation === 'horizontal');
         return {
-            rows: rows,
+            rows: 'auto',
             columns: SECTION_COLUMNS,
-            min_rows: 2,
             // A heatmap squeezed into a few columns is unreadable; horizontal needs more
             // width still, since the whole range runs along that axis.
             min_columns: horizontal ? 6 : 3
         };
     }
+
+    // The height of your card. Home Assistant uses this to automatically
+    // distribute all cards over the available columns.
 
     getCardSize() {
         /*

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Cards overlapping each other, or leaving a gap below, in the sections view (#19, reported by @spikeygg). The card estimated its height as a whole number of grid rows, and the estimate was off by part of a row: too short when a title was shown, so the legend ran into the next card, and too tall without one. The card now reports `rows: auto` and takes the height of its content, whatever the title, range, legend or layout. As a result its height can no longer be dragged in the Layout tab. Use `display.height` to set the grid height instead.
+
 ## [2026.11.4] - 2026-11-04
 
 ### Fixed
