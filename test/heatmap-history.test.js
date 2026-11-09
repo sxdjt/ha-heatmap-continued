@@ -90,6 +90,15 @@ test('history_to_statistics treats unavailable time as a gap, not a zero', () =>
         'hour 1 is omitted entirely, like a statistics period without data');
 });
 
+test('history_to_statistics reports a constant period exactly, however long it held', () => {
+    // 29.1 * t / t is inexact for t = 2992 ms among others; every t here must give 29.1.
+    for (let held = 1; held <= HOUR; held += 997) {
+        const states = history('sensor.p', [[T0 + HOUR - held, '29.1']]);
+        const [entry] = history_to_statistics(states, T0, T0 + HOUR, 'hour');
+        assert.equal(entry.mean, 29.1, `held ${held} ms`);
+    }
+});
+
 test('history_to_statistics keeps the last value of each period as state', () => {
     const states = history('sensor.p', [[T0, '1'], [T0 + 10 * MIN, '9'], [T0 + 20 * MIN, '5']]);
     const [entry] = history_to_statistics(states, T0, T0 + HOUR, 'hour');

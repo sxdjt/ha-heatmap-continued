@@ -1240,7 +1240,10 @@ function history_to_statistics(states, start_ms, end_ms, period) {
             last = segment.value;
         }
         if (covered === 0) { continue; }
-        entries.push({ start: from, end: to, mean: weighted / covered, min, max, state: last });
+        // A period holding one value reports it exactly: value * t / t is off in the
+        // last bit for about one t in five (29.1 -> 29.099999999999998).
+        const mean = (min === max) ? min : weighted / covered;
+        entries.push({ start: from, end: to, mean, min, max, state: last });
     }
     return entries;
 }
