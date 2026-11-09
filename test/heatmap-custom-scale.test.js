@@ -358,3 +358,110 @@ test('a new step goes one gap above the highest', () => {
     assert.equal(add([]).value, 1);
     assert.deepEqual(add([{ color: '#a' }, { color: '#b' }], 'relative'), { color: '#888888' });
 });
+
+/* --- range controls (#21) ------------------------------------------------- */
+
+const { tidy_range, RANGE_FALLBACK } = loadCard();
+
+test('tidy_range widens a range to tidy numbers', () => {
+    assert.deepEqual(plain(tidy_range(29.05, 29.58)), { low: 29, high: 29.6, decimals: 2 });
+    assert.deepEqual(plain(tidy_range(3, 97)), { low: 0, high: 100, decimals: 0 });
+    assert.deepEqual(plain(tidy_range(18.2, 24.7)), { low: 18, high: 25, decimals: 1 });
+    assert.deepEqual(plain(tidy_range(-5.3, 12)), { low: -6, high: 12, decimals: 1 });
+});
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+function rangeEditor(options = {}) {
+    const made = makeEditor({ ws: statsOf('mean', [29.3, 29.05, 29.58]), ...options });
+    made.editor.updates = 0;
+    made.editor.requestUpdate = () => { made.editor.updates++; };
+    return made;
+}
+
+test('the range boxes are labelled Minimum and Maximum', () => {
+    const markup = text(rangeEditor().editor.render_range_controls());
+    assert.ok(markup.indexOf('>Minimum<') < markup.indexOf('>Maximum<'));
+    assert.match(markup, /class="range-label">Minimum</);
+});
+
+test('the greyed placeholders show the inferred range once it has loaded', async () => {
+    const { editor } = rangeEditor();
+    assert.match(text(editor.render_range_controls()), /placeholder=Auto[\s\S]*placeholder=Auto/);
+    await settle();
+    assert.equal(editor.updates, 1, 're-rendered when the range landed');
+    assert.match(text(editor.render_range_controls()), /placeholder=29\s[\s\S]*placeholder=29\.6\s/);
+});
+
+test('the placeholders fall back to 0 and 100 without usable data', async () => {
+    const { editor } = rangeEditor({ ws: () => Promise.resolve({}) });
+    editor.render_range_controls();
+    await settle();
+    assert.match(text(editor.render_range_controls()), /placeholder=0\s[\s\S]*placeholder=100\s/);
+    assert.deepEqual(plain(RANGE_FALLBACK), { min: 0, max: 100 });
+});
+
+test('the range is looked up once per configuration', async () => {
+    const { editor, calls } = rangeEditor();
+    editor.render_range_controls();
+    editor.render_range_controls();
+    await settle();
+    editor.render_range_controls();
+    assert.equal(calls.ws.length, 1);
+
+    editor._config = { ...editor._config, days: 3 };
+    editor.render_range_controls();
+    assert.equal(calls.ws.length, 2, 'a new window means a new lookup');
+});
+
+test('a range for an outdated configuration is dropped', async () => {
+    let release;
+    const { editor } = rangeEditor({ ws: () => new Promise((resolve) => { release = resolve; }) });
+    editor.render_range_controls();
+    await settle();
+    editor._config = { ...editor._config, entity: 'sensor.other' };
+    release({ 'sensor.x': [{ mean: 1 }, { mean: 9 }] });
+    await settle();
+    assert.equal(editor._range_hint_cache, undefined);
+    assert.equal(editor.updates, 0);
+});
+
+const toggle = (editor, bound, checked) =>
+    editor._range_auto_changed(bound, { stopPropagation() {}, target: { checked } });
+
+test('unticking fills in the inferred value, not 0 (#21)', async () => {
+    const { editor } = rangeEditor();
+    editor.render_range_controls();
+    await settle();
+    await toggle(editor, 'max', false);
+    await toggle(editor, 'min', false);
+    assert.equal(editor.dispatched[0].data.max, 29.6);
+    assert.equal(editor.dispatched[1].data.min, 29);
+});
+
+test('unticking before the range has loaded waits for it', async () => {
+    const { editor } = rangeEditor();
+    await toggle(editor, 'max', false);
+    assert.equal(editor.dispatched[0].data.max, 29.6);
+});
+
+test('unticking without usable data fills in 0 or 100', async () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+        const { editor } = rangeEditor({ ws: () => Promise.reject(new Error('boom')) });
+        await toggle(editor, 'max', false);
+        await toggle(editor, 'min', false);
+        assert.equal(editor.dispatched[0].data.max, 100);
+        assert.equal(editor.dispatched[1].data.min, 0);
+    } finally {
+        console.warn = warn;
+    }
+});
+
+test('ticking infers the bound again and keeps the other one', async () => {
+    const { editor } = rangeEditor({ config: { data: { min: 5, max: 50 } } });
+    await toggle(editor, 'min', true);
+    assert.deepEqual(editor.dispatched[0].data, { min: 'auto', max: 50 });
+    assert.equal(editor._config.data.min, 5, 'the current config is not mutated');
+});

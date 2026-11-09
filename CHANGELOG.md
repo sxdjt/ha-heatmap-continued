@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Unticking "Infer from the sensor data" under Range set the bound to 0, so a maximum had to be typed in again (#21, reported by @spikeygg). It now fills in the sensor's actual minimum or maximum over the configured days, rounded to tidy numbers, and the greyed-out boxes show that value beforehand instead of a fixed 0 and 100. Without usable data it falls back to 0 and 100.
+- The two Range boxes are now labelled Minimum and Maximum (#21).
+- A sensor without a `state_class` that held one value for a whole period could show it as, for example, 29.099999999999998 instead of 29.1, which could also round a custom scale's starting step one notch low.
+
 ## [2026.11.10-beta.2] - 2026-11-09
 
 Pre-release for testing. Adds to 2026.11.10-beta.1, whose changes are listed below.

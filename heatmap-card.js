@@ -1283,6 +1283,10 @@ function fetch_history_statistics(hass, entity_ids, period, start_time, end_time
 // so it can never collide with one.
 const CUSTOM_SCALE_OPTION = '__custom__';
 
+// Range bounds offered in the editor when the data gives nothing better. These were the
+// fixed placeholders of the min/max boxes before the range was looked up.
+const RANGE_FALLBACK = {min: 0, max: 100};
+
 // Steps a new custom scale starts from when nothing better is known.
 const DEFAULT_CUSTOM_STEPS = [
     {value: 0,   color: '#4caf50'},
@@ -1291,19 +1295,26 @@ const DEFAULT_CUSTOM_STEPS = [
 ];
 
 /*
-    Turn a relative scale's colours into absolute steps spread across [min, max], the
-    data's actual range. Each step keeps its relative position (0-1, or evenly spaced
-    when the scale has none), so the colours land where they would under auto-range.
+    Widen [min, max] (min < max) to tidy numbers for showing to the user: rounded outward
+    on a unit of the power of ten below half the span (29.05-29.58 -> 29.0-29.6, CPU
+    3-97 % -> 0-100). `decimals` is one place below that unit, enough to round anything
+    derived from the range without letting float noise reach the config.
+*/
+function tidy_range(min, max) {
+    const unit = Math.pow(10, Math.floor(Math.log10((max - min) / 2)));
+    const decimals = Math.max(0, 1 - Math.floor(Math.log10(unit)));
+    const round = (value) => Number(value.toFixed(decimals));
+    return { low: round(Math.floor(min / unit) * unit), high: round(Math.ceil(max / unit) * unit), decimals };
+}
 
-    The range is widened to tidy numbers first: rounded outward on a unit of the power
-    of ten below half the span (29.05-29.58 -> 29.0-29.6), and values are rounded to
-    one decimal place below that unit so float noise never reaches the config.
+/*
+    Turn a relative scale's colours into absolute steps spread across [min, max], the
+    data's actual range, widened by tidy_range(). Each step keeps its relative position
+    (0-1, or evenly spaced when the scale has none), so the colours land where they
+    would under auto-range.
 */
 function steps_across_range(steps, min, max) {
-    const unit = Math.pow(10, Math.floor(Math.log10((max - min) / 2)));
-    const low = Math.floor(min / unit) * unit;
-    const high = Math.ceil(max / unit) * unit;
-    const decimals = Math.max(0, 1 - Math.floor(Math.log10(unit)));
+    const { low, high, decimals } = tidy_range(min, max);
     return steps.map((step, i) => {
         const position = Number.isFinite(step.value) ? step.value : i / (steps.length - 1);
         return { value: Number((low + position * (high - low)).toFixed(decimals)), color: step.color };
@@ -4526,16 +4537,23 @@ class HeatmapCardEditor extends LitElement {
         Min/max range controls, shared by both the built-in relative scale picker and the
         custom relative scale editor. Each field has a checkbox to let HA infer the value
         automatically from the data instead.
+
+        While a bound is inferred its box shows, greyed out, the value it would get if
+        unticked: the entity's actual range over the configured window (see
+        _range_hint()), and unticking fills in exactly that rather than 0 (#21).
     */
     render_range_controls() {
         const minAuto = is_auto(this._config.data?.min);
         const maxAuto = is_auto(this._config.data?.max);
+        const hint = this._range_hint();
+        const placeholder = (bound) => (hint === undefined) ? 'Auto' : String(hint[bound]);
         return html`
             <h3>Range</h3>
             <div>
+                <label class="range-label">Minimum</label>
                 <input
                     type="number"
-                    placeholder="0"
+                    placeholder=${placeholder('min')}
                     .value=${minAuto ? '' : String(this._config.data.min)}
                     ?disabled=${minAuto}
                     style="display:block;width:100%;padding:8px 12px;font-size:14px;border:1px solid var(--divider-color,#e0e0e0);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);box-sizing:border-box;"
@@ -4550,17 +4568,16 @@ class HeatmapCardEditor extends LitElement {
                 <div class="checkbox-row">
                     <ha-checkbox
                         .checked=${minAuto}
-                        .value=${"auto"}
-                        .configValue=${"data.min"}
-                        @change=${this.update_field}
+                        @change=${(e) => this._range_auto_changed('min', e)}
                     ></ha-checkbox>
                     <label>Infer from the sensor data</label>
                 </div>
             </div>
             <div>
+                <label class="range-label">Maximum</label>
                 <input
                     type="number"
-                    placeholder="100"
+                    placeholder=${placeholder('max')}
                     .value=${maxAuto ? '' : String(this._config.data.max)}
                     ?disabled=${maxAuto}
                     style="display:block;width:100%;padding:8px 12px;font-size:14px;border:1px solid var(--divider-color,#e0e0e0);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);box-sizing:border-box;"
@@ -4575,14 +4592,73 @@ class HeatmapCardEditor extends LitElement {
                 <div class="checkbox-row">
                     <ha-checkbox
                         .checked=${maxAuto}
-                        .value=${"auto"}
-                        .configValue=${"data.max"}
-                        @change=${this.update_field}
+                        @change=${(e) => this._range_auto_changed('max', e)}
                     ></ha-checkbox>
                     <label>Infer from the sensor data</label>
                 </div>
             </div>
         `;
+    }
+
+    /*
+        What the range lookup depends on: the entity and every option that changes which
+        series _value_range() reads or over how long. A change to any of them makes the
+        cached hint stale.
+    */
+    _range_hint_key() {
+        const c = this._config;
+        return JSON.stringify([c.entity, c.secondary_entity, c.mode, c.days, c.weeks,
+            c.aggregate, c.minute_rows, c.treat_as]);
+    }
+
+    /*
+        The tidy {min, max} to offer for the range bounds, or undefined while it is still
+        loading. Starts the lookup the first time it is asked for a given key and asks for
+        a re-render when it lands; a result for an outdated key is dropped. Falls back to
+        RANGE_FALLBACK (0-100) when there is no usable range, so the hint and what
+        unticking fills in always agree.
+    */
+    _range_hint() {
+        const key = this._range_hint_key();
+        if (this._range_hint_cache?.key === key) { return this._range_hint_cache.value; }
+        if (this._range_hint_pending?.key !== key) {
+            const promise = this._value_range()
+                .catch((error) => {
+                    console.warn('heatmap-card: could not infer the range', error);
+                    return null;
+                })
+                .then((range) => {
+                    const value = range ? tidy_range(range.min, range.max) : null;
+                    const hint = value ? {min: value.low, max: value.high} : RANGE_FALLBACK;
+                    if (this._range_hint_key() === key) {
+                        this._range_hint_cache = {key, value: hint};
+                        this.requestUpdate?.();
+                    }
+                    return hint;
+                });
+            this._range_hint_pending = {key, promise};
+        }
+        return undefined;
+    }
+
+    /*
+        Tick: infer the bound from the data again. Untick: fill in the hinted value (the
+        greyed placeholder), waiting for the lookup if it has not landed yet, instead of
+        the 0 the shared update_field() handler used to write (#21). Stops propagation,
+        as update_field() did, so the event is not also applied as a plain config key.
+    */
+    async _range_auto_changed(bound, ev) {
+        ev.stopPropagation?.();
+        const checked = ev.target.checked;
+        let value = 'auto';
+        if (!checked) {
+            const hint = this._range_hint() ?? await this._range_hint_pending.promise;
+            value = hint[bound];
+        }
+        // Cloned after any await, so edits made while the range was loading are kept.
+        const config = deep_clone(this._config);
+        config.data = {...(config.data ?? {}), [bound]: value};
+        this._dispatch_config(config);
     }
 
     /*
@@ -5551,6 +5627,13 @@ class HeatmapCardEditor extends LitElement {
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+
+        .range-label {
+            display: block;
+            margin: 8px 0 4px;
+            font-size: 14px;
+            color: var(--secondary-text-color);
         }
 
         .custom-step-unit {

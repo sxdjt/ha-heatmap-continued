@@ -58,6 +58,8 @@ function loadCard() {
             history_to_statistics,
             fetch_history_statistics,
             steps_across_range,
+            tidy_range,
+            RANGE_FALLBACK,
             CUSTOM_SCALE_OPTION,
             DEFAULT_CUSTOM_STEPS,
             smooth_plateaus,
