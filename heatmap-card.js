@@ -1150,6 +1150,102 @@ function local_hour_start(date) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* Raw history fallback                                                      */
+/* ------------------------------------------------------------------------- */
+/*
+    An entity without a state_class gets no long-term statistics, so the card reads its
+    raw state history instead and reshapes it into what statistics_during_period would
+    have returned. Every grid builder downstream then works unchanged.
+
+    Period boundaries copy HA's statistics: 5-minute and hourly periods sit on fixed
+    epoch boundaries (whole UTC hours, so +05:30 zones see them at :30 local, exactly as
+    with real statistics), and daily periods start at local midnight.
+*/
+const HISTORY_PERIOD_MS = { '5minute': 5 * 60000, 'hour': 3600000 };
+
+/*
+    Numeric value of a raw history state, or null for unavailable/unknown/non-numeric
+    states. Number() rather than parseFloat() so '12abc' is rejected, with an explicit
+    blank check because Number('') is 0.
+*/
+function history_value(state) {
+    if (typeof state !== 'string' || state.trim() === '') { return null; }
+    const value = Number(state);
+    return Number.isFinite(value) ? value : null;
+}
+
+/*
+    [start_ms, end_ms) of every statistics period overlapping [start_ms, end_ms).
+    Daily periods step with setDate() so a DST change cannot shift later midnights.
+*/
+function history_periods(start_ms, end_ms, period) {
+    const periods = [];
+    if (period === 'day') {
+        const day = new Date(start_ms);
+        day.setHours(0, 0, 0, 0);
+        while (day.getTime() < end_ms) {
+            const next = new Date(day);
+            next.setDate(next.getDate() + 1);
+            periods.push([day.getTime(), next.getTime()]);
+            day.setTime(next.getTime());
+        }
+        return periods;
+    }
+    const step = HISTORY_PERIOD_MS[period];
+    for (let from = Math.floor(start_ms / step) * step; from < end_ms; from += step) {
+        periods.push([from, from + step]);
+    }
+    return periods;
+}
+
+/*
+    Reduce raw history (oldest first, as HA returns it) to statistics entries
+    { start, end, mean, min, max, state } for the window [start_ms, end_ms).
+
+    Each state holds from its last_changed until the next state, and the first state
+    returned is the one already in effect at the window start. `mean` is weighted by
+    how long each value held, as HA's own statistics are, so a value held for 50
+    minutes outweighs one held for 2. Time spent unavailable or non-numeric counts as
+    a gap, not a zero; a period with no numeric time at all is omitted, matching how
+    statistics leave out periods without data. `state` is the period's last value.
+*/
+function history_to_statistics(states, start_ms, end_ms, period) {
+    const changed = (entry) => Date.parse(entry.last_changed ?? entry.last_updated);
+    const segments = [];
+    for (let i = 0; i < states.length; i++) {
+        const value = history_value(states[i].state);
+        const from = Math.max(changed(states[i]), start_ms);
+        const to = (i + 1 < states.length) ? Math.min(changed(states[i + 1]), end_ms) : end_ms;
+        if (value === null || !(to > from)) { continue; }
+        segments.push({ from, to, value });
+    }
+
+    const entries = [];
+    let first = 0;
+    for (const [from, to] of history_periods(start_ms, end_ms, period)) {
+        while (first < segments.length && segments[first].to <= from) { first++; }
+        let weighted = 0;
+        let covered = 0;
+        let min = Infinity;
+        let max = -Infinity;
+        let last = null;
+        for (let i = first; i < segments.length && segments[i].from < to; i++) {
+            const segment = segments[i];
+            const overlap = Math.min(segment.to, to) - Math.max(segment.from, from);
+            if (overlap <= 0) { continue; }
+            weighted += segment.value * overlap;
+            covered += overlap;
+            min = Math.min(min, segment.value);
+            max = Math.max(max, segment.value);
+            last = segment.value;
+        }
+        if (covered === 0) { continue; }
+        entries.push({ start: from, end: to, mean: weighted / covered, min, max, state: last });
+    }
+    return entries;
+}
+
+/* ------------------------------------------------------------------------- */
 /* HeatmapScales - scale management and color generation                     */
 /* ------------------------------------------------------------------------- */
 /*
@@ -2641,7 +2737,7 @@ class HeatmapCard extends LitElement {
             // Both entities are processed with the primary's state_class, so an
             // incompatible pairing would silently render garbage. Show an error
             // and skip the fetch instead.
-            const conflict = this.secondary_state_class_conflict();
+            const conflict = this.secondary_history_conflict() ?? this.secondary_state_class_conflict();
             if (conflict) {
                 this.grid = [];
                 this.grid_status = conflict;
@@ -2724,6 +2820,72 @@ class HeatmapCard extends LitElement {
     }
 
     /*
+        True when the entity has no state_class, so HA keeps no statistics for it and
+        the card falls back to raw history. Its readings are then always treated as a
+        measurement: without a state_class nothing says they are a running total.
+    */
+    uses_history() {
+        return !this.meta?.state_class;
+    }
+
+    /*
+        Single entry point for both fetch paths. Sends the statistics request as is,
+        or answers it from raw history in the same shape when uses_history(), so the
+        callers and every grid builder stay unaware of the source. History values are
+        in the entity's own unit; the request's unit overrides do not apply to them.
+    */
+    statistics_during_period(request) {
+        if (!this.uses_history()) { return this.myhass.callWS(request); }
+        return this.history_as_statistics(request.statistic_ids, request.period,
+            request.start_time, request.end_time);
+    }
+
+    /*
+        Fetch raw history over the REST API (same query as the waterfall history card)
+        and reduce it per entity with history_to_statistics(). An entity with no numeric
+        history in the window is left out, which callers already report as "No data".
+        The window is cut off at now: the last state holds until the next change, and
+        the future has not happened yet.
+    */
+    history_as_statistics(entity_ids, period, start_time, end_time) {
+        const start_ms = Date.parse(start_time);
+        const end_ms = Math.min(Date.parse(end_time), Date.now());
+        const path = `history/period/${start_time}` +
+            `?filter_entity_id=${entity_ids.map(encodeURIComponent).join(',')}` +
+            `&end_time=${end_time}&significant_changes_only=1&minimal_response&no_attributes`;
+        return this.myhass.callApi('GET', path).then((history) => {
+            const response = {};
+            for (const states of (history ?? [])) {
+                // Only the first state of each list carries entity_id under minimal_response.
+                const entity_id = states[0]?.entity_id;
+                if (!entity_id) { continue; }
+                const entries = history_to_statistics(states, start_ms, end_ms, period);
+                if (entries.length > 0) { response[entity_id] = entries; }
+            }
+            return response;
+        });
+    }
+
+    /*
+        "No data", plus the likeliest reason when there is one: paging past what the
+        recorder keeps. Raw history and 5-minute statistics are both purged after
+        purge_keep_days, which the bare "No data" does not explain.
+    */
+    no_data_status(minute) {
+        const status = this.myhass.localize('ui.components.data-table.no-data');
+        if (this.uses_history()) {
+            return status + '. This entity has no state_class, so only its raw history is ' +
+                "available, and that is only kept for the recorder's purge_keep_days " +
+                '(10 days by default).';
+        }
+        if (minute) {
+            return status + '. 5-minute statistics are only kept for the ' +
+                "recorder's purge_keep_days (10 days by default).";
+        }
+        return status;
+    }
+
+    /*
         Fill in any auto (unset or 'auto') data.min/data.max bound from the current
         grid's extent. Explicit numeric bounds set in config are left untouched.
     */
@@ -2789,7 +2951,7 @@ class HeatmapCard extends LitElement {
                 ? minute_grid(data, 'sum', true)
                 : this.calculate_increasing_values(data);
         };
-        this.myhass.callWS({
+        this.statistics_during_period({
             'type': 'recorder/statistics_during_period',
             'statistic_ids': consumers,
             "period": minute ? "5minute" : "hour",
@@ -2813,19 +2975,13 @@ class HeatmapCard extends LitElement {
                     // secondary entity is tolerated (it simply contributes nothing).
                     if (consumer === this.config.entity) {
                         this.grid = [];
-                        this.grid_status = this.myhass.localize('ui.components.data-table.no-data');
-                        // The likeliest cause in minute mode is paging past the short-term
-                        // statistics retention, which the bare "No data" does not explain.
-                        if (minute) {
-                            this.grid_status += '. 5-minute statistics are only kept for the ' +
-                                "recorder's purge_keep_days (10 days by default).";
-                        }
+                        this.grid_status = this.no_data_status(minute);
                         return;
                     }
                     grids.push([]);
                     continue;
                 }
-                switch (this.meta.state_class) {
+                switch (this.uses_history() ? 'measurement' : this.meta.state_class) {
                     case 'measurement':
                         grids.push(measurement_grid(consumerData, 'mean'));
                         break;
@@ -2984,6 +3140,23 @@ class HeatmapCard extends LitElement {
     }
 
     /*
+        Returns an error message when either entity has no state_class, or null.
+        Such an entity can only be read from raw history, and combining a history
+        source is not supported yet. An entity whose state is not loaded is tolerated,
+        as in secondary_state_class_conflict(): it may be an external statistic.
+    */
+    secondary_history_conflict() {
+        if (!this.config.secondary_entity) { return null; }
+        const without = [this.config.entity, this.config.secondary_entity].find((entity_id) => {
+            const attributes = this.myhass.states[entity_id]?.attributes;
+            return attributes !== undefined && !attributes.state_class;
+        });
+        if (without === undefined) { return null; }
+        return `Cannot combine entities: '${without}' has no state_class, so it can only be ` +
+            'read from raw history, and secondary_entity does not support that yet.';
+    }
+
+    /*
         For a signed difference with auto range, widen the range symmetrically around
         zero so a diverging scale renders zero at its midpoint. Only applies when
         differencing two entities and the user has not pinned an explicit min or max.
@@ -3029,7 +3202,7 @@ class HeatmapCard extends LitElement {
         startTime.setDate(startTime.getDate() - days_since_monday - (weeks * DAYS_PER_WEEK));
         startTime.setHours(0, 0, 0, 0);
 
-        this.myhass.callWS({
+        this.statistics_during_period({
             'type': 'recorder/statistics_during_period',
             'statistic_ids': consumers,
             'period': use_last ? 'hour' : 'day',
@@ -3044,7 +3217,7 @@ class HeatmapCard extends LitElement {
                 const consumerData = recorderResponse[consumer];
                 if (consumerData === undefined) {
                     this.grid = [];
-                    this.grid_status = this.myhass.localize('ui.components.data-table.no-data');
+                    this.grid_status = this.no_data_status(false);
                     continue;
                 }
                 this.grid = use_last
@@ -4239,6 +4412,27 @@ class HeatmapCardEditor extends LitElement {
     */
     render_secondary_entity_warning() {
         if (!this._config.secondary_entity) { return; }
+        // An entity without a state_class can only be read from raw history, which
+        // cannot be combined yet. Mirrors HeatmapCard.secondary_history_conflict().
+        const without = [this._config.entity, this._config.secondary_entity].find((entity_id) => {
+            const attributes = this.myhass.states[entity_id]?.attributes;
+            return attributes !== undefined && !attributes.state_class;
+        });
+        if (without !== undefined) {
+            return html`
+                <ha-alert
+                    .title=${"Warning"}
+                    .type=${"warning"}
+                    own-margin
+                >
+                    <div>
+                        <p>These entities cannot be combined: <i>${without}</i> has no
+                        <code>state_class</code>, so it can only be read from raw history,
+                        which a secondary entity does not support yet.</p>
+                    </div>
+                </ha-alert>
+            `;
+        }
         const primary_class = this.myhass.states[this._config.entity]?.attributes?.state_class;
         const secondary_class = this.myhass.states[this._config.secondary_entity]?.attributes?.state_class;
         if (!state_classes_incompatible(primary_class, secondary_class)) { return; }
@@ -4619,16 +4813,33 @@ class HeatmapCardEditor extends LitElement {
     }
 
     /*
-        Show a warning banner if the selected entity does not have a state_class that HA will
-        record to Long Term Statistics (LTS). Without LTS, the heatmap will always be empty.
-        Valid classes are: measurement, total, total_increasing. Returns nothing if the entity
-        is not yet loaded or if the state_class is valid.
+        Explain how the selected entity's data will be read when it is not the usual
+        Long Term Statistics (LTS) path. With no state_class at all the card falls back
+        to raw history (see uses_history()), so that is an info note about its shorter
+        reach rather than a warning. Any other state_class outside measurement, total and
+        total_increasing still gets the warning: the card cannot read it at all. Returns
+        nothing if the entity is not yet loaded or if the state_class is valid.
     */
     render_entity_warning() {
         if (this.entity === undefined) { return; }
-        if (this.entity.attributes?.state_class === undefined ||
-            ['measurement', 'total', 'total_increasing'].includes(this.entity.attributes?.state_class) === false
-            ) {
+        if (!this.entity.attributes?.state_class) {
+            return html`
+                <ha-alert
+                    .title=${"No long-term statistics"}
+                    .type=${"info"}
+                    own-margin
+                >
+                    <div>
+                        <p>This entity has no <code>state_class</code>, so Home Assistant keeps
+                        no long-term statistics for it. The heatmap reads its raw history
+                        instead, which the recorder only keeps for <code>purge_keep_days</code>
+                        (10 days by default); older days stay empty.</p>
+                        <p>A secondary entity cannot be combined with it.</p>
+                    </div>
+                </ha-alert>
+            `;
+        }
+        if (['measurement', 'total', 'total_increasing'].includes(this.entity.attributes.state_class) === false) {
                 return html`
                     <ha-alert
                         .title=${"Warning"}
@@ -4637,7 +4848,7 @@ class HeatmapCardEditor extends LitElement {
                     >
                         <div>
                             <p>This entity has a <code>state_class</code> attribute set to
-                            <i>${this.entity.attributes?.state_class ?? 'undefined'}</i>.</p>
+                            <i>${this.entity.attributes.state_class}</i>.</p>
                             <p>This means that data won't be saved to Long Term Statistics, which
                             we use to drive the heatmap; no results will be shown.</p>
                         </div>

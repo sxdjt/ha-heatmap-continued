@@ -34,6 +34,7 @@ In discussions on my other heatmaps cards, many people have commented that [kand
 - **Adjustable height** - pin the grid to a fixed height and let cells and date labels adapt
 - **History browser** - page back through history a screen at a time with the arrow controls
 - **Adjustable time axis** - group hours into larger buckets and control how often the axis is labelled
+- **Sensors without a `state_class`** - falls back to raw history for the days the recorder still keeps (beta)
 
 ---
 
@@ -137,6 +138,28 @@ Applies to `total` and `total_increasing` entities in hourly and minute mode, an
 ignored for `measurement` entities and with `treat_as: measurement`. Cell values keep 6
 decimal places while it is on, so the shares are not rounded away. Ported from the
 original card's `high-res` branch.
+
+### Sensors without a state_class
+
+The card normally reads Home Assistant's long-term statistics, which are only kept for
+sensors with a `state_class`. For a numeric sensor without one, it reads the sensor's raw
+history instead and averages it into cells the same way statistics would (weighted by how
+long each value held, with unavailable time left out). No configuration is needed.
+
+Raw history only goes back as far as the recorder's `purge_keep_days` (10 days by default),
+so with the default 21 days, or in daily mode, only the most recent days have colour. The
+readings are always treated as measurements, and `secondary_entity` cannot be used with
+such a sensor yet. Values are shown in the sensor's own unit.
+
+For full history, give the sensor a `state_class` instead, either in its integration or with
+`customize`; the card then switches to statistics on its own, from the day statistics begin:
+
+```yaml
+homeassistant:
+  customize:
+    sensor.ecowitt_pressure_absolute:
+      state_class: measurement
+```
 
 ### Horizontal (Carpet Plot) Example
 
