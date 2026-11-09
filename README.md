@@ -420,10 +420,17 @@ erroring, so existing dashboards keep rendering:
 
 The visual editor includes a threshold editor that lets you build custom scales without touching YAML:
 
-- Toggle "Use custom thresholds" on the scale picker
+- Pick **Custom**, the first option in the Scale dropdown. The steps start from the scale you
+  had selected: a fixed scale (such as outdoor temperature) is copied value for value, in your
+  sensor's unit, and an auto-range scale (such as stoplight) keeps its colours, spread across
+  the range your sensor actually covered over the configured days. Without usable data the
+  steps start at 0 / 50 / 100.
 - Choose **Fixed thresholds** (absolute) or **Auto-range** (relative)
-- Add or remove color steps; set values for fixed scales
-- Return to a built-in scale with "Back to preset scales"
+- Add or remove color steps; set values for fixed scales. Each value shows the unit the grid
+  uses, and the steps re-sort by value when you leave a box.
+- Pick a built-in scale in the same dropdown to go back to it
+
+Every sensor gets the Scale dropdown, including ones without a device class.
 
 ### Via YAML
 

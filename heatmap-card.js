@@ -1245,6 +1245,68 @@ function history_to_statistics(states, start_ms, end_ms, period) {
     return entries;
 }
 
+/*
+    Fetch raw history over the REST API (same query as the waterfall history card) and
+    reduce it per entity with history_to_statistics(), giving the same response shape as
+    recorder/statistics_during_period. An entity with no numeric history in the window
+    is left out, which callers already treat as "No data". The window is cut off at now:
+    the last state holds until the next change, and the future has not happened yet.
+    Shared by the card and the editor's custom-scale range lookup.
+*/
+function fetch_history_statistics(hass, entity_ids, period, start_time, end_time) {
+    const start_ms = Date.parse(start_time);
+    const end_ms = Math.min(Date.parse(end_time), Date.now());
+    const path = `history/period/${start_time}` +
+        `?filter_entity_id=${entity_ids.map(encodeURIComponent).join(',')}` +
+        `&end_time=${end_time}&significant_changes_only=1&minimal_response&no_attributes`;
+    return hass.callApi('GET', path).then((history) => {
+        const response = {};
+        for (const states of (history ?? [])) {
+            // Only the first state of each list carries entity_id under minimal_response.
+            const entity_id = states[0]?.entity_id;
+            if (!entity_id) { continue; }
+            const entries = history_to_statistics(states, start_ms, end_ms, period);
+            if (entries.length > 0) { response[entity_id] = entries; }
+        }
+        return response;
+    });
+}
+
+/* ------------------------------------------------------------------------- */
+/* Custom scale helpers (visual editor)                                      */
+/* ------------------------------------------------------------------------- */
+
+// Value of the "Custom" option in the editor's Scale dropdown. Not a valid built-in key,
+// so it can never collide with one.
+const CUSTOM_SCALE_OPTION = '__custom__';
+
+// Steps a new custom scale starts from when nothing better is known.
+const DEFAULT_CUSTOM_STEPS = [
+    {value: 0,   color: '#4caf50'},
+    {value: 50,  color: '#ffeb3b'},
+    {value: 100, color: '#cf0000'}
+];
+
+/*
+    Turn a relative scale's colours into absolute steps spread across [min, max], the
+    data's actual range. Each step keeps its relative position (0-1, or evenly spaced
+    when the scale has none), so the colours land where they would under auto-range.
+
+    The range is widened to tidy numbers first: rounded outward on a unit of the power
+    of ten below half the span (29.05-29.58 -> 29.0-29.6), and values are rounded to
+    one decimal place below that unit so float noise never reaches the config.
+*/
+function steps_across_range(steps, min, max) {
+    const unit = Math.pow(10, Math.floor(Math.log10((max - min) / 2)));
+    const low = Math.floor(min / unit) * unit;
+    const high = Math.ceil(max / unit) * unit;
+    const decimals = Math.max(0, 1 - Math.floor(Math.log10(unit)));
+    return steps.map((step, i) => {
+        const position = Number.isFinite(step.value) ? step.value : i / (steps.length - 1);
+        return { value: Number((low + position * (high - low)).toFixed(decimals)), color: step.color };
+    });
+}
+
 /* ------------------------------------------------------------------------- */
 /* HeatmapScales - scale management and color generation                     */
 /* ------------------------------------------------------------------------- */
@@ -1499,6 +1561,12 @@ class HeatmapScales {
     generate_scale(config, device_class = undefined, unit_system = {}) {
         // Custom scales have been observed to be immutable in Home Assistant 2024.11, requiring to be cloned to be modified
         const steps = deep_clone(config.steps);
+        // chroma needs an ascending domain: out-of-order YAML steps would otherwise give
+        // wrong colours without any error. Stable, so equal values keep their order, and
+        // unit conversion below is monotonic, so it cannot unsort them again.
+        if (steps.every((step) => Number.isFinite(step.value))) {
+            steps.sort((a, b) => a.value - b.value);
+        }
         const colors = [];
         const domains = [];
         let unit = config.unit;
@@ -2841,29 +2909,10 @@ class HeatmapCard extends LitElement {
     }
 
     /*
-        Fetch raw history over the REST API (same query as the waterfall history card)
-        and reduce it per entity with history_to_statistics(). An entity with no numeric
-        history in the window is left out, which callers already report as "No data".
-        The window is cut off at now: the last state holds until the next change, and
-        the future has not happened yet.
+        Raw history in the statistics response shape; see fetch_history_statistics().
     */
     history_as_statistics(entity_ids, period, start_time, end_time) {
-        const start_ms = Date.parse(start_time);
-        const end_ms = Math.min(Date.parse(end_time), Date.now());
-        const path = `history/period/${start_time}` +
-            `?filter_entity_id=${entity_ids.map(encodeURIComponent).join(',')}` +
-            `&end_time=${end_time}&significant_changes_only=1&minimal_response&no_attributes`;
-        return this.myhass.callApi('GET', path).then((history) => {
-            const response = {};
-            for (const states of (history ?? [])) {
-                // Only the first state of each list carries entity_id under minimal_response.
-                const entity_id = states[0]?.entity_id;
-                if (!entity_id) { continue; }
-                const entries = history_to_statistics(states, start_ms, end_ms, period);
-                if (entries.length > 0) { response[entity_id] = entries; }
-            }
-            return response;
-        });
+        return fetch_history_statistics(this.myhass, entity_ids, period, start_time, end_time);
     }
 
     /*
@@ -4268,7 +4317,24 @@ class HeatmapCardEditor extends LitElement {
 
         this.entity = this.myhass.states[this._config.entity];
         this.device_class = (this.entity && this.entity.attributes.device_class) ?? this._config.device_class;
-        this.scale = this.scales.get_scale(this._config.scale)
+        this.scale = this.scales.get_scale(this._is_custom_scale() ? this._config.scale : this._scale_key());
+    }
+
+    // True when config.scale is a custom scale object rather than a built-in key.
+    _is_custom_scale() {
+        return typeof(this._config.scale) === 'object' && this._config.scale !== null;
+    }
+
+    /*
+        The built-in scale the card is actually using: the configured key, or the default
+        for the device class when none is set (exactly what populate_meta() resolves).
+        Without this the editor showed nothing selected, and the docs and range controls
+        of 'stoplight' rather than the real default, e.g. outdoor temperature.
+    */
+    _scale_key() {
+        return (typeof(this._config.scale) === 'string')
+            ? this._config.scale
+            : this.scales.defaults_for(this.device_class);
     }
 
     /*
@@ -4546,16 +4612,17 @@ class HeatmapCardEditor extends LitElement {
     }
 
     /*
-        Single scale picker showing all built-in scales with gradient preview.
-        Absolute scales (with fixed value ranges) are listed first, followed by
-        relative scales (which also expose Range controls for min/max).
+        Single scale picker: "Custom" first, then all built-in scales, absolute (with fixed
+        value ranges) before relative (which also expose Range controls for min/max).
+        Shown for every entity, with or without a device_class: one without simply
+        defaults to the global default scale.
+
+        The dropdown stays visible in both cases. A built-in shows its gradient preview,
+        range controls and docs below it; Custom shows the step editor instead, and
+        picking a built-in again replaces the custom scale.
     */
     render_scale_picker() {
-        if (!this.device_class) { return; }
-
-        if (typeof(this._config.scale) === 'object') {
-            return this.render_custom_scale_editor();
-        }
+        const is_custom = this._is_custom_scale();
 
         // Absolute scales first (specific, value-anchored), then relative (generic)
         const all_scales = [
@@ -4566,17 +4633,27 @@ class HeatmapCardEditor extends LitElement {
             value: scale.key,
             css: scale.css
         }});
+        const options = [
+            {value: CUSTOM_SCALE_OPTION, label: 'Custom'},
+            ...all_scales.map(s => ({value: s.value, label: s.label}))
+        ];
 
-        // Show gradient preview for the currently selected scale
-        const selected_scale = all_scales.find(s => s.value === (this._config.scale || ''));
-        const gradient_preview = selected_scale ? html`
-            <div style="height:12px;border-radius:4px;margin-top:8px;background:linear-gradient(90deg, ${selected_scale.css});"></div>
-        ` : '';
-
-        // Range controls only apply to relative scales (absolute scales have built-in fixed steps)
-        var range_section = '';
-        if (this.scale?.type === 'relative') {
-            range_section = this.render_range_controls();
+        var details;
+        if (is_custom) {
+            details = this.render_custom_scale_editor();
+        } else {
+            // Show gradient preview for the currently selected scale
+            const selected_scale = all_scales.find(s => s.value === this._scale_key());
+            const gradient_preview = selected_scale ? html`
+                <div style="height:12px;border-radius:4px;margin-top:8px;background:linear-gradient(90deg, ${selected_scale.css});"></div>
+            ` : '';
+            // Range controls only apply to relative scales (absolute scales have built-in fixed steps)
+            const range_section = (this.scale?.type === 'relative') ? this.render_range_controls() : '';
+            details = html`
+                ${gradient_preview}
+                ${range_section}
+                ${this.render_scale_docs()}
+            `;
         }
 
         return html`
@@ -4584,28 +4661,22 @@ class HeatmapCardEditor extends LitElement {
             <ha-selector
                 .hass=${this.myhass}
                 .label=${"Scale"}
-                .selector=${{select: {options: all_scales.map(s => ({value: s.value, label: s.label}))}}}
-                .value=${this._config.scale || ''}
+                .selector=${{select: {options}}}
+                .value=${is_custom ? CUSTOM_SCALE_OPTION : this._scale_key()}
                 @value-changed=${this._scale_changed}
             ></ha-selector>
-            ${gradient_preview}
-            ${range_section}
-            ${this.render_scale_docs()}
-            <div>
-                <a href="#" @click=${(e) => { e.preventDefault(); this._switch_to_custom(); }}>
-                    Use custom thresholds
-                </a>
-            </div>
+            ${details}
         `;
     }
 
     /*
-        Render the custom threshold editor, shown when config.scale is an object (not a string key).
-        Allows the user to:
+        Render the custom threshold editor, shown below the Scale dropdown when config.scale
+        is an object (not a string key). Allows the user to:
           - Switch between absolute (fixed value steps) and relative (auto-range) scale types
           - Add/remove color steps
-          - Set colors via a native color picker; set values via native number input (absolute only)
-        Includes a "Back to preset scales" link that calls _reset_to_builtin().
+          - Set colors via a native color picker; set values via native number input (absolute
+            only), followed by the unit the grid shows them in
+        Going back to a built-in scale is done from the Scale dropdown itself.
 
         The type selector uses ha-selector rather than the older ha-select + mwc-list-item
         pair, which stopped rendering when Home Assistant moved from MWC to MD3.
@@ -4614,6 +4685,7 @@ class HeatmapCardEditor extends LitElement {
         const scale = this._config.scale;
         const steps = scale.steps || [];
         const is_absolute = scale.type !== 'relative';
+        const unit = this._value_unit();
 
         // Range controls for auto-range (relative) custom scales
         var range_section = '';
@@ -4622,7 +4694,6 @@ class HeatmapCardEditor extends LitElement {
         }
 
         return html`
-            <h3>Custom scale</h3>
             <ha-selector
                 .hass=${this.myhass}
                 .label=${"Scale type"}
@@ -4648,6 +4719,7 @@ class HeatmapCardEditor extends LitElement {
                                 @change=${(e) => this._update_step_value(i, e.target.value)}
                                 style="flex:1;padding:4px 8px;font-size:14px;border:1px solid var(--divider-color,#e0e0e0);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);"
                             >
+                            ${unit ? html`<span class="custom-step-unit">${unit}</span>` : ''}
                         ` : html`<span style="flex:1;padding:0 8px;align-self:center;">Step ${i + 1}</span>`}
                         <button
                             class="custom-step-remove"
@@ -4662,11 +4734,6 @@ class HeatmapCardEditor extends LitElement {
                 <a href="#" @click=${(e) => { e.preventDefault(); this._add_step(); }}>+ Add threshold</a>
             </div>
             ${range_section}
-            <div>
-                <a href="#" @click=${(e) => { e.preventDefault(); this._reset_to_builtin(); }}>
-                    Back to preset scales
-                </a>
-            </div>
         `;
     }
 
@@ -4692,46 +4759,132 @@ class HeatmapCardEditor extends LitElement {
     }
 
     /*
-        Switch from a built-in scale to a custom absolute scale with three default steps.
-        Called when the user clicks "Use custom thresholds". Pre-populates with a simple
-        green-yellow-red gradient anchored at 0 / 50 / 100.
+        Switch to a custom absolute scale, starting from the scale currently in use so the
+        user adjusts something sensible instead of typing every step:
+          - an absolute built-in is copied step for step, in the unit the grid shows (so
+            a °F sensor gets the °F values, not the scale's authored °C ones)
+          - a relative built-in keeps its colours, spread across the entity's actual range
+            (see _value_range() and steps_across_range())
+        Falls back to DEFAULT_CUSTOM_STEPS (0 / 50 / 100) when there is no usable range.
+        Called when "Custom" is picked in the Scale dropdown.
     */
-    _switch_to_custom() {
+    async _switch_to_custom() {
+        let steps = DEFAULT_CUSTOM_STEPS;
+        try {
+            const source = this.scales.get_scale(this._scale_key(), this.device_class, this._unit_system());
+            if (source.type === 'absolute') {
+                steps = source.steps.map((step) => ({value: step.value, color: step.color}));
+            } else {
+                const range = await this._value_range();
+                if (range) { steps = steps_across_range(source.steps, range.min, range.max); }
+            }
+        } catch (error) {
+            // A failed lookup only costs the better starting point, never the switch.
+            console.warn('heatmap-card: could not derive custom scale steps', error);
+        }
+        // Cloned after the await, so any edit made while the range was loading is kept.
         const config = deep_clone(this._config);
-        config.scale = {
-            type: 'absolute',
-            name: 'Custom',
-            steps: [
-                {value: 0,   color: '#4caf50'},
-                {value: 50,  color: '#ffeb3b'},
-                {value: 100, color: '#cf0000'}
-            ]
-        };
+        config.scale = {type: 'absolute', name: 'Custom', steps: deep_clone(steps)};
         this._dispatch_config(config);
     }
 
     /*
-        Revert from a custom scale back to the built-in default for the current device class.
-        Also clears any manual data.min/max overrides that were set while in custom mode.
-        Called when the user clicks "Back to preset scales".
+        The unit system the grid's values are in: HA's, with temperature following the
+        entity's own °C/°F unit (#20). Matches HeatmapCard.populate_meta().
     */
-    _reset_to_builtin() {
-        const config = deep_clone(this._config);
-        config.scale = this.scales.defaults_for(this.device_class);
-        delete config.data;
-        this._dispatch_config(config);
+    _unit_system() {
+        return entity_unit_system(this.myhass.config.unit_system,
+            this.entity?.attributes?.unit_of_measurement);
     }
 
     /*
-        Append a new empty step to the custom scale. For relative scales the step has
-        only a color; for absolute scales a default value of 0 is also added.
+        The unit the grid's values are shown in, for labelling custom scale steps.
+        Statistics normalise energy to kWh (see statistics_units()); raw history, used
+        when there is no state_class, keeps the entity's own unit.
+    */
+    _value_unit() {
+        const attributes = this.entity?.attributes;
+        if (!attributes) { return undefined; }
+        if (attributes.device_class === 'energy' && attributes.state_class) { return 'kWh'; }
+        return attributes.unit_of_measurement;
+    }
+
+    /*
+        Lowest and highest value the grid would show for the configured entity over its
+        configured range, as {min, max}, or null when that cannot be known: no data, a
+        flat line, an unreadable state_class, or a secondary entity (whose combined
+        values would need the whole grid pipeline).
+
+        Reads the same series the grid is built from - hourly means, 5-minute means in
+        minute mode, the configured daily aggregate in daily mode - from statistics, or
+        from raw history when the entity has no state_class. Totals use the per-period
+        `change`, since the grid shows usage per period, not the meter reading.
+    */
+    async _value_range() {
+        const config = this._config;
+        const attributes = this.myhass.states[config.entity]?.attributes;
+        if (!attributes || config.secondary_entity) { return null; }
+
+        const state_class = attributes.state_class;
+        const daily = (config.mode === 'daily');
+        const minute = (config.mode === 'minute');
+        let field;
+        if (!state_class || state_class === 'measurement') {
+            field = (daily && ['min', 'max'].includes(config.aggregate)) ? config.aggregate : 'mean';
+        } else if (state_class === 'total' && config.treat_as === 'measurement') {
+            field = 'state';
+        } else if (['total', 'total_increasing'].includes(state_class)) {
+            field = 'change';
+        } else {
+            return null;
+        }
+
+        const days = daily ? (config.weeks ?? 12) * DAYS_PER_WEEK
+            : (config.days ?? (!minute ? 21
+                : config.minute_rows === 'day' ? DEFAULT_MINUTE_DAY_ROW_DAYS
+                : DEFAULT_MINUTE_DAYS));
+        const period = daily ? 'day' : (minute ? '5minute' : 'hour');
+        const end = new Date();
+        const start = new Date(end.getTime() - days * 86400000);
+        const response = state_class
+            ? await this.myhass.callWS({
+                'type': 'recorder/statistics_during_period',
+                'statistic_ids': [config.entity],
+                'period': period,
+                'units': {'energy': 'kWh', 'temperature': this._unit_system().temperature},
+                'start_time': start.toISOString(),
+                'end_time': end.toISOString(),
+                'types': [field]
+            })
+            : await fetch_history_statistics(this.myhass, [config.entity], period,
+                start.toISOString(), end.toISOString());
+
+        const values = (response?.[config.entity] ?? [])
+            .map((entry) => entry[field])
+            .filter((value) => Number.isFinite(value));
+        if (values.length === 0) { return null; }
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        return (max > min) ? {min, max} : null;
+    }
+
+    /*
+        Append a new step to the custom scale. For relative scales the step has only a
+        color. For absolute scales it goes one gap above the current highest step (or
+        at 0 for an empty scale), so it lands at the end of the list rather than being
+        re-sorted to wherever a fixed 0 would fall.
     */
     _add_step() {
         const config = deep_clone(this._config);
         const steps = config.scale.steps || [];
-        const new_step = config.scale.type === 'relative'
-            ? {color: '#888888'}
-            : {value: 0, color: '#888888'};
+        let new_step = {color: '#888888'};
+        if (config.scale.type !== 'relative') {
+            const values = steps.map((step) => step.value).filter((value) => Number.isFinite(value));
+            const top = values.length ? Math.max(...values) : 0;
+            const below = values.filter((value) => value < top);
+            const gap = below.length ? top - Math.max(...below) : 1;
+            new_step = {value: top + gap, color: '#888888'};
+        }
         steps.push(new_step);
         config.scale.steps = steps;
         this._dispatch_config(config);
@@ -4759,12 +4912,22 @@ class HeatmapCardEditor extends LitElement {
     }
 
     /*
-        Update the numeric value for the step at the given index (absolute scales only).
-        Called on 'change' from the native number input in the step row.
+        Update the numeric value for the step at the given index (absolute scales only),
+        then re-sort the steps by value so the rows always read low to high. Called on
+        'change' from the native number input, which fires when the user leaves the box,
+        so rows never jump while a number is being typed. A blank or non-numeric entry
+        is ignored rather than saved as NaN, which the card would reject.
     */
     _update_step_value(index, value) {
+        const parsed = parseFloat(value);
+        if (!Number.isFinite(parsed)) {
+            // Re-render so the box shows the stored value again.
+            this.requestUpdate?.();
+            return;
+        }
         const config = deep_clone(this._config);
-        config.scale.steps[index].value = parseFloat(value);
+        config.scale.steps[index].value = parsed;
+        config.scale.steps.sort((a, b) => a.value - b.value);
         this._dispatch_config(config);
     }
 
@@ -4807,6 +4970,11 @@ class HeatmapCardEditor extends LitElement {
         ev.stopPropagation();
         const scale = ev.detail?.value ?? ev.target.value;
         if (!scale) { return; }
+        if (scale === CUSTOM_SCALE_OPTION) {
+            // Re-picking Custom must not throw away the steps already being edited.
+            if (!this._is_custom_scale()) { this._switch_to_custom(); }
+            return;
+        }
         const config = deep_clone(this._config);
         config['scale'] = scale;
         this._dispatch_config(config);
@@ -5380,6 +5548,12 @@ class HeatmapCardEditor extends LitElement {
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+
+        .custom-step-unit {
+            min-width: 2.5em;
+            color: var(--secondary-text-color);
+            font-size: 14px;
         }
 
         .custom-step-row input[type="color"] {

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- "Custom" is now the first option in the visual editor's Scale dropdown, and the step editor opens below it rather than replacing it; picking a built-in scale in the same dropdown goes back. The "Use custom thresholds" and "Back to preset scales" links are gone.
+- A new custom scale starts from the scale that was selected instead of a fixed 0 / 50 / 100: a fixed-value scale is copied in the sensor's unit, and an auto-range scale keeps its colours, placed across the range the sensor actually covered over the configured days (hourly usage for energy and other meters). 0 / 50 / 100 remains the fallback when there is no usable data.
+- Custom step values show the unit the grid uses.
+
+### Fixed
+- The Scale dropdown, and with it custom scales, was missing from the visual editor for sensors without a device class.
+- Custom scale steps entered out of order, in the editor or in YAML, produced wrong colours. Steps are now sorted by value; the editor re-sorts them when you leave a value box, and adds a new step above the highest one instead of at 0.
+- The editor showed no scale selected, and the docs and range controls of the stoplight scale, for a card without a `scale:` set; it now shows the scale actually in use, e.g. outdoor temperature for a temperature sensor.
+
 ## [2026.11.10-beta.1] - 2026-11-09
 
 Pre-release for testing.
