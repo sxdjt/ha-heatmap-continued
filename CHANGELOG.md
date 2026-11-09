@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2026.11.10-beta.1] - 2026-11-09
+
+Pre-release for testing.
 
 ### Added
 - Sensors without a `state_class` now show data. Home Assistant keeps no long-term statistics for them, so the card used to stay empty; it now reads their raw history instead and averages it into cells the same way statistics would. Raw history only goes back as far as the recorder's `purge_keep_days` (10 days by default), so older days stay empty, and "No data" now says why. Works in hourly, minute and daily mode. Such a sensor cannot be combined with a `secondary_entity` yet; the card and the editor both say so.
