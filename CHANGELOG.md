@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2026.11.10-beta.2] - 2026-11-09
+
+Pre-release for testing. Adds to 2026.11.10-beta.1, whose changes are listed below.
 
 ### Added
 - "Custom" is now the first option in the visual editor's Scale dropdown, and the step editor opens below it rather than replacing it; picking a built-in scale in the same dropdown goes back. The "Use custom thresholds" and "Back to preset scales" links are gone.
