@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.11.9-beta.1] - 2026-11-08
+
+Pre-release for testing.
+
+### Fixed
+- Temperature sensors whose unit is changed per entity showing in the wrong unit (#20, reported by @spikeygg). The card always asked Home Assistant for temperatures in the system-wide unit, so a sensor set to °C on a °F install (CPU or GPU temperatures, for example) was converted and shown in °F, legend included. The card now uses the sensor's own °C or °F unit for both the data and the colour scale. Sensors in any other unit, Kelvin included, still follow the system-wide unit.
+
+### Changed
+- The visual editor's "Temperature F/C" switch is now labelled "Treat as temperature". It only appears for sensors without a device class, and it makes the card treat the sensor as a temperature; it never chose a unit.
+
 ## [2026.11.8] - 2026-11-08
 
 Supersedes the 2026.11.8-beta.1 pre-release; no changes since.
