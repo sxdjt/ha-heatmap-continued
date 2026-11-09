@@ -47,6 +47,7 @@ function loadCard() {
         globalThis.__card_exports = {
             HeatmapScales,
             HeatmapCard,
+            HeatmapCardEditor,
             BUILTIN_SCALES,
             SCALE_ALIASES,
             label_stride,
@@ -59,6 +60,7 @@ function loadCard() {
             shorten_month,
             month_shortening_is_safe,
             DEVICE_CLASSES,
+            entity_unit_system,
             conversions,
             chroma
         };

@@ -1172,6 +1172,20 @@ const conversions = {
 }
 
 /*
+    The unit system to show an entity in. HA lets a user override a temperature
+    sensor's unit per entity (e.g. °C for CPU temps on an otherwise °F install), and
+    both the statistics request and scale conversion must follow that override rather
+    than the global unit system, or the card silently shows the other unit (#20).
+    Only units `conversions` can convert a scale into are honoured; anything else,
+    Kelvin included, keeps the global system as before.
+*/
+const ENTITY_TEMPERATURE_UNITS = ['°C', '°F'];
+function entity_unit_system(unit_system, unit_of_measurement) {
+    if (!unit_system || !ENTITY_TEMPERATURE_UNITS.includes(unit_of_measurement)) { return unit_system; }
+    return { ...unit_system, 'temperature': unit_of_measurement };
+}
+
+/*
     Manages the built-in color scales and generates ready-to-use scale objects.
 
     Typical call sequence:
@@ -2696,14 +2710,16 @@ class HeatmapCard extends LitElement {
 
     /*
         Unit overrides sent with every statistics request. Energy is always
-        normalised to kWh; temperature follows the frontend's configured unit
-        system so scales convert correctly. See get_recorder() for why pressure
-        is deliberately omitted.
+        normalised to kWh; temperature follows the entity's own unit, falling back
+        to the frontend's configured unit system, so scales convert correctly. A
+        secondary entity is converted into the primary's unit. See get_recorder()
+        for why pressure is deliberately omitted.
     */
     statistics_units() {
+        const unit_system = this.meta?.unit_system ?? this.myhass.config.unit_system;
         return {
             'energy': 'kWh',
-            'temperature': this.myhass.config.unit_system.temperature
+            'temperature': unit_system.temperature
         };
     }
 
@@ -3378,6 +3394,8 @@ class HeatmapCard extends LitElement {
         meta holds:
           - unit_of_measurement, state_class, device_class: from the entity attributes
             (device_class can be overridden via config.device_class)
+          - unit_system: hass unit system with temperature overridden by the entity's own
+            °C/°F unit, used for both the statistics request and scale conversion
           - language: resolved from hass for locale-aware date formatting
           - scale: the fully rendered scale object (gradient + css + steps + unit)
           - title: from config, or null to suppress the header, or friendly_name as fallback
@@ -3387,15 +3405,17 @@ class HeatmapCard extends LitElement {
     populate_meta(hass) {
         const consumerAttributes = hass.states[this.config.entity].attributes;
         const device_class = (consumerAttributes.device_class ?? this.config.device_class);
+        const unit_system = entity_unit_system(hass.config.unit_system, consumerAttributes.unit_of_measurement);
         var meta = {
             'unit_of_measurement': consumerAttributes.unit_of_measurement,
             'state_class': consumerAttributes.state_class,
             'device_class': device_class,
+            'unit_system': unit_system,
             'language': hass.selectedLanguage ?? hass.language ?? 'en',
             'scale': this.scales.get_scale(
                 (this.config.scale ?? this.scales.defaults_for(device_class)),
                 device_class,
-                this.myhass.config.unit_system
+                unit_system
             ),
             'title': (this.config.title ?? (this.config.title === null ? undefined : consumerAttributes.friendly_name)),
             'data': {
@@ -4091,7 +4111,7 @@ class HeatmapCardEditor extends LitElement {
 
         return html`
             <div class="toggle-row">
-                <label>Temperature F/C</label>
+                <label>Treat as temperature</label>
                 <ha-switch
                     .checked=${this._config.device_class === 'temperature'}
                     @change=${(e) => {

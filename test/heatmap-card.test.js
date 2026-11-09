@@ -995,3 +995,162 @@ test('every locale still yields twelve distinct month labels', () => {
         assert.equal(labels.size, 12, `${locale} produced ambiguous month labels`);
     }
 });
+
+// #20: a temperature entity whose unit is overridden per entity (e.g. °C CPU temps on a
+// °F install) must be fetched, scaled and labelled in its own unit, not the global one.
+const { HeatmapScales, HeatmapCardEditor, entity_unit_system } = loadCard();
+
+const US_SYSTEM = { temperature: '°F', length: 'mi' };
+
+function unitHass(states) {
+    const requests = [];
+    return {
+        requests,
+        config: { unit_system: US_SYSTEM },
+        language: 'en',
+        states,
+        localize: () => 'No data',
+        callWS(request) { requests.push(request); return new Promise(() => {}); }
+    };
+}
+
+function unitCard(unit_of_measurement, device_class = 'temperature', config = {}) {
+    const myhass = unitHass({
+        'sensor.cpu': { attributes: { unit_of_measurement, device_class, state_class: 'measurement' } },
+        'sensor.gpu': { attributes: { unit_of_measurement: '°F', device_class: 'temperature', state_class: 'measurement' } }
+    });
+    const card = makeCard({
+        config: { entity: 'sensor.cpu', mode: 'hourly', days: 1, weeks: 1, data: {}, display: {}, ...config },
+        scales: new HeatmapScales(),
+        view_offset: 0,
+        myhass
+    });
+    card.meta = card.populate_meta(myhass);
+    return card;
+}
+
+test('entity_unit_system overrides temperature for a °C or °F entity unit', () => {
+    assert.deepEqual({ ...entity_unit_system(US_SYSTEM, '°C') }, { temperature: '°C', length: 'mi' });
+    assert.deepEqual({ ...entity_unit_system(US_SYSTEM, '°F') }, { temperature: '°F', length: 'mi' });
+    assert.equal(US_SYSTEM.temperature, '°F', 'the hass unit system is not mutated');
+});
+
+test('entity_unit_system keeps the global system for units it cannot convert a scale to', () => {
+    assert.equal(entity_unit_system(US_SYSTEM, 'K'), US_SYSTEM, 'Kelvin has no scale conversion');
+    assert.equal(entity_unit_system(US_SYSTEM, '%'), US_SYSTEM);
+    assert.equal(entity_unit_system(US_SYSTEM, 'C'), US_SYSTEM, 'only the exact HA unit strings');
+    assert.equal(entity_unit_system(US_SYSTEM, undefined), US_SYSTEM);
+    assert.equal(entity_unit_system(undefined, '°C'), undefined, 'no unit system to override');
+});
+
+test('populate_meta records the entity unit system for a °C entity on a °F install', () => {
+    const card = unitCard('°C');
+    assert.equal(card.meta.unit_system.temperature, '°C');
+    assert.equal(card.meta.unit_system.length, 'mi');
+});
+
+test('a °C entity on a °F install keeps the °C scale unconverted', () => {
+    const card = unitCard('°C');
+    const builtin = new HeatmapScales().scale_by_key['outdoor temperature'];
+    assert.equal(builtin.unit, '°C');
+    assert.equal(card.meta.scale.unit, '°C');
+    assert.deepEqual(card.meta.scale.steps.map((s) => s.value), builtin.steps.map((s) => s.value));
+});
+
+test('a °F entity on a °F install still converts the °C scale to °F', () => {
+    const card = unitCard('°F');
+    assert.equal(card.meta.scale.unit, '°F');
+    assert.equal(card.meta.scale.steps[0].value, -22, '-30 °C');
+});
+
+test('a Kelvin entity keeps the pre-#20 behaviour of the global unit', () => {
+    const card = unitCard('K');
+    assert.equal(card.meta.scale.unit, '°F');
+    assert.equal(card.statistics_units().temperature, '°F');
+});
+
+test('a non-temperature entity falls back to the global temperature unit', () => {
+    const card = unitCard('%', undefined);
+    assert.equal(card.meta.unit_system, US_SYSTEM);
+    assert.equal(card.statistics_units().temperature, '°F');
+    assert.equal(card.statistics_units().energy, 'kWh');
+});
+
+test('statistics_units falls back to hass when meta has no unit system yet', () => {
+    const card = makeCard({ meta: {}, myhass: { config: { unit_system: US_SYSTEM } } });
+    assert.equal(card.statistics_units().temperature, '°F');
+    assert.equal(makeCard({ myhass: { config: { unit_system: US_SYSTEM } } }).statistics_units().temperature, '°F');
+});
+
+test('hourly fetch requests a °C entity in °C (#20)', () => {
+    const card = unitCard('°C');
+    card.fetch_history();
+    assert.equal(card.myhass.requests.length, 1);
+    assert.equal(card.myhass.requests[0].units.temperature, '°C');
+    assert.equal(card.myhass.requests[0].units.energy, 'kWh');
+});
+
+test('daily fetch requests a °C entity in °C (#20)', () => {
+    for (const aggregate of ['mean', 'last']) {
+        const card = unitCard('°C', 'temperature', { mode: 'daily', aggregate });
+        card.fetch_history();
+        assert.equal(card.myhass.requests[0].units.temperature, '°C', aggregate);
+    }
+});
+
+test('minute fetch requests a °C entity in °C (#20)', () => {
+    const card = unitCard('°C', 'temperature', { mode: 'minute', minute_interval: 5 });
+    card.fetch_history();
+    assert.equal(card.myhass.requests[0].period, '5minute');
+    assert.equal(card.myhass.requests[0].units.temperature, '°C');
+});
+
+test('a °F secondary entity is fetched in the °C primary unit', () => {
+    const card = unitCard('°C', 'temperature', { secondary_entity: 'sensor.gpu' });
+    card.fetch_history();
+    const request = card.myhass.requests[0];
+    assert.deepEqual([...request.statistic_ids], ['sensor.cpu', 'sensor.gpu']);
+    assert.equal(request.units.temperature, '°C');
+});
+
+// The device_class switch only sets device_class: temperature; it never picked a unit,
+// so its old "Temperature F/C" label read as a unit choice (#20).
+function makeEditor(attributes, config = {}) {
+    const editor = Object.create(HeatmapCardEditor.prototype);
+    editor.entity = { attributes };
+    editor._config = { entity: 'sensor.cpu', ...config };
+    editor.scales = new HeatmapScales();
+    editor.dispatched = [];
+    editor._dispatch_config = (c) => editor.dispatched.push(c);
+    return editor;
+}
+
+test('the device_class switch is labelled "Treat as temperature"', () => {
+    const markup = makeEditor({ unit_of_measurement: '%' }).render_device_class_picker().strings.join('');
+    assert.match(markup, /<label>Treat as temperature<\/label>/);
+    assert.doesNotMatch(markup, /F\/C/);
+});
+
+test('the device_class switch is hidden for an entity with its own device_class', () => {
+    assert.equal(makeEditor({ device_class: 'temperature' }).render_device_class_picker(), undefined);
+    const editor = makeEditor({});
+    editor.entity = undefined;
+    assert.equal(editor.render_device_class_picker(), undefined);
+});
+
+test('the device_class switch reflects and toggles device_class: temperature', () => {
+    const off = makeEditor({ unit_of_measurement: '%' });
+    const [checked, onChange] = off.render_device_class_picker().values;
+    assert.equal(checked, false);
+
+    onChange({ target: { checked: true } });
+    assert.equal(off.dispatched[0].device_class, 'temperature');
+    assert.equal(off.dispatched[0].scale, 'outdoor temperature');
+
+    const on = makeEditor({ unit_of_measurement: '%' }, { device_class: 'temperature', scale: 'x' });
+    const [on_checked, onToggle] = on.render_device_class_picker().values;
+    assert.equal(on_checked, true);
+    onToggle({ target: { checked: false } });
+    assert.equal('device_class' in on.dispatched[0], false);
+    assert.equal(on._config.device_class, 'temperature', 'editor config is cloned, not mutated');
+});
