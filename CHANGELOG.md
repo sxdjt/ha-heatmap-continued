@@ -2,50 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2026.11.10-beta.4] - 2026-11-10
+## [2026.11.10] - 2026-11-10
 
-Pre-release for testing. Adds to 2026.11.10-beta.3, whose changes are listed below.
+Supersedes the 2026.11.10-beta.1 to 2026.11.10-beta.4 pre-releases; everything below is the
+combined change against 2026.11.9. Problems found and fixed during that beta cycle are not
+listed separately, since none of them reached a stable release.
+
+### Added
+- Sensors without a `state_class` now show data. Home Assistant keeps no long-term statistics for them, so the card used to stay empty; it now reads their raw history instead and averages it into cells the same way statistics would. Raw history only goes back as far as the recorder's `purge_keep_days` (10 days by default), so older days stay empty, and "No data" now says why. Works in hourly, minute and daily mode. Such a sensor cannot be combined with a `secondary_entity` yet; the card and the editor both say so.
+- "Custom" is now the first option in the visual editor's Scale dropdown, and the step editor opens below it rather than replacing it; picking a built-in scale in the same dropdown goes back. The "Use custom thresholds" and "Back to preset scales" links are gone.
+- A new custom scale starts from the scale that was selected instead of a fixed 0 / 50 / 100: a fixed-value scale is copied in the sensor's unit, and an auto-range scale keeps its colours, placed across the range the sensor actually covered over the configured days (hourly usage for energy and other meters). 0 / 50 / 100 remains the fallback when there is no usable data.
+- Custom step values show the unit the grid uses.
+
+### Changed
+- The editor's warning that a sensor without a `state_class` will show no results is now an info note explaining the raw-history fallback and its 10-day reach.
 
 ### Fixed
+- The Scale dropdown, and with it custom scales, was missing from the visual editor for sensors without a device class.
+- Custom scale steps entered out of order, in the editor or in YAML, produced wrong colours. Steps are now sorted by value; the editor re-sorts them when you leave a value box, and adds a new step above the highest one instead of at 0.
+- The editor showed no scale selected, and the docs and range controls of the stoplight scale, for a card without a `scale:` set; it now shows the scale actually in use, e.g. outdoor temperature for a temperature sensor.
+- Unticking "Infer from the sensor data" under Range set the bound to 0, so a maximum had to be typed in again (#21, reported by @spikeygg). It now fills in the sensor's actual minimum or maximum over the configured days, rounded to tidy numbers, and the greyed-out boxes show that value beforehand instead of a fixed 0 and 100. Without usable data it falls back to 0 and 100.
+- The two Range boxes are now labelled Minimum and Maximum (#21).
 - Visual editor accessibility (WCAG 2.1 AA):
   - Switches and checkboxes now have accessible names; screen readers announced them unnamed. The two "Infer from the sensor data" checkboxes are named for the bound they control.
   - The Minimum and Maximum boxes are tied to their labels, and every control in a custom step row is named after its step ("Color for step 2", "Remove step 2").
   - "+ Add threshold" is a button rather than a link, so Space works on it.
   - The High Res Mode help beside Mode was hover-only. The icon is now a button that shows the text below the row, so it can be read with a keyboard, on touch and by screen readers; hovering still shows it as before.
   - Number box borders and colour swatches have a visible edge (3:1), so a white step colour no longer vanishes on a light card.
-
-## [2026.11.10-beta.3] - 2026-11-09
-
-Pre-release for testing. Adds to 2026.11.10-beta.2, whose changes are listed below.
-
-### Fixed
-- Unticking "Infer from the sensor data" under Range set the bound to 0, so a maximum had to be typed in again (#21, reported by @spikeygg). It now fills in the sensor's actual minimum or maximum over the configured days, rounded to tidy numbers, and the greyed-out boxes show that value beforehand instead of a fixed 0 and 100. Without usable data it falls back to 0 and 100.
-- The two Range boxes are now labelled Minimum and Maximum (#21).
-- A sensor without a `state_class` that held one value for a whole period could show it as, for example, 29.099999999999998 instead of 29.1, which could also round a custom scale's starting step one notch low.
-
-## [2026.11.10-beta.2] - 2026-11-09
-
-Pre-release for testing. Adds to 2026.11.10-beta.1, whose changes are listed below.
-
-### Added
-- "Custom" is now the first option in the visual editor's Scale dropdown, and the step editor opens below it rather than replacing it; picking a built-in scale in the same dropdown goes back. The "Use custom thresholds" and "Back to preset scales" links are gone.
-- A new custom scale starts from the scale that was selected instead of a fixed 0 / 50 / 100: a fixed-value scale is copied in the sensor's unit, and an auto-range scale keeps its colours, placed across the range the sensor actually covered over the configured days (hourly usage for energy and other meters). 0 / 50 / 100 remains the fallback when there is no usable data.
-- Custom step values show the unit the grid uses.
-
-### Fixed
-- The Scale dropdown, and with it custom scales, was missing from the visual editor for sensors without a device class.
-- Custom scale steps entered out of order, in the editor or in YAML, produced wrong colours. Steps are now sorted by value; the editor re-sorts them when you leave a value box, and adds a new step above the highest one instead of at 0.
-- The editor showed no scale selected, and the docs and range controls of the stoplight scale, for a card without a `scale:` set; it now shows the scale actually in use, e.g. outdoor temperature for a temperature sensor.
-
-## [2026.11.10-beta.1] - 2026-11-09
-
-Pre-release for testing.
-
-### Added
-- Sensors without a `state_class` now show data. Home Assistant keeps no long-term statistics for them, so the card used to stay empty; it now reads their raw history instead and averages it into cells the same way statistics would. Raw history only goes back as far as the recorder's `purge_keep_days` (10 days by default), so older days stay empty, and "No data" now says why. Works in hourly, minute and daily mode. Such a sensor cannot be combined with a `secondary_entity` yet; the card and the editor both say so.
-
-### Changed
-- The editor's warning that a sensor without a `state_class` will show no results is now an info note explaining the raw-history fallback and its 10-day reach.
 
 ## [2026.11.9] - 2026-11-09
 

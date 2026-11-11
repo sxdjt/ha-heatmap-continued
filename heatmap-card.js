@@ -5776,7 +5776,7 @@ window.customCards.push({
     }
 });
 console.info(
-    "%c HEATMAP-CARD %c 2026.11.10-beta.4 ",
+    "%c HEATMAP-CARD %c 2026.11.10 ",
     "color: black; background: #F2720C; font-weight: 600;",
     "color: black; background: #00a5c9; font-weight: 600;"
 );
