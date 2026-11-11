@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Visual editor accessibility (WCAG 2.1 AA):
+  - Switches and checkboxes now have accessible names; screen readers announced them unnamed. The two "Infer from the sensor data" checkboxes are named for the bound they control.
+  - The Minimum and Maximum boxes are tied to their labels, and every control in a custom step row is named after its step ("Color for step 2", "Remove step 2").
+  - "+ Add threshold" is a button rather than a link, so Space works on it.
+  - The High Res Mode help beside Mode was hover-only. The icon is now a button that shows the text below the row, so it can be read with a keyboard, on touch and by screen readers; hovering still shows it as before.
+  - Number box borders and colour swatches have a visible edge (3:1), so a white step colour no longer vanishes on a light card.
+
 ## [2026.11.10-beta.3] - 2026-11-09
 
 Pre-release for testing. Adds to 2026.11.10-beta.2, whose changes are listed below.

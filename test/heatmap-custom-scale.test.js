@@ -465,3 +465,43 @@ test('ticking infers the bound again and keeps the other one', async () => {
     assert.deepEqual(editor.dispatched[0].data, { min: 'auto', max: 50 });
     assert.equal(editor._config.data.min, 5, 'the current config is not mutated');
 });
+
+/* --- accessible names ----------------------------------------------------- */
+
+test('the range boxes are tied to their labels', () => {
+    const markup = text(rangeEditor().editor.render_range_controls());
+    assert.match(markup, /for="range-min"[^>]*>Minimum<\/label>\s*<input\s+id="range-min"/);
+    assert.match(markup, /for="range-max"[^>]*>Maximum<\/label>\s*<input\s+id="range-max"/);
+});
+
+test('the range checkboxes say which bound they infer', () => {
+    // Both visible labels read the same, so each name has to carry its bound.
+    const markup = text(rangeEditor().editor.render_range_controls());
+    for (const bound of ['minimum', 'maximum']) {
+        const name = `Infer ${bound} from the sensor data`;
+        assert.match(markup, new RegExp(`<ha-checkbox\\s+aria-label="${name}"`));
+        assert.match(markup, new RegExp(`class="visually-hidden">${name}</span></ha-checkbox>`));
+    }
+});
+
+test('every control in a step row is named after its step', () => {
+    const scale = { type: 'absolute', steps: [{ value: 1, color: '#000000' }, { value: 2, color: '#ffffff' }] };
+    const markup = text(makeEditor({ config: { scale } }).editor.render_custom_scale_editor());
+    for (const name of ['Color for step 1', 'Value for step 1', 'Remove step 1', 'Remove step 2']) {
+        assert.ok(markup.includes(`aria-label="${name}"`), name);
+    }
+});
+
+test('adding a step is a button, not a link', () => {
+    const scale = { type: 'relative', steps: [{ color: '#000000' }, { color: '#ffffff' }] };
+    const markup = text(makeEditor({ config: { scale } }).editor.render_custom_scale_editor());
+    assert.match(markup, /<button class="add-step"[\s\S]*?>\+ Add threshold<\/button>/);
+    assert.doesNotMatch(markup, /<a href="#"/);
+});
+
+test('switches carry their label as a name', () => {
+    const { editor } = makeEditor({ attributes: { state_class: 'total_increasing' } });
+    const markup = text(editor.render_smoothing_toggle());
+    assert.match(markup, /<ha-switch\s+aria-label="Smooth low-precision readings"/);
+    assert.match(markup, /class="visually-hidden">Smooth low-precision readings<\/span><\/ha-switch>/);
+});

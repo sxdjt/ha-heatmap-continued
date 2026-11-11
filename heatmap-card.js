@@ -4301,7 +4301,8 @@ class HeatmapCardEditor extends LitElement {
             _config: {},
             entity: undefined,
             device_class: undefined,
-            scale: undefined
+            scale: undefined,
+            _mode_help_open: {}
         };
     }
 
@@ -4352,6 +4353,20 @@ class HeatmapCardEditor extends LitElement {
     }
 
     /*
+        Accessible name for an ha-switch or ha-checkbox, slotted inside it.
+
+        Since HA moved them to Web Awesome, their inner <input> is named only by slotted
+        content: an aria-label on the host never reaches it, and the sibling <label> in each
+        row is not associated with anything. The slotted text is visually hidden because
+        that sibling label already shows it, and still has to, for releases whose switch
+        has no slot. Those older (MWC) releases are named by the host aria-label instead,
+        so callers set both.
+    */
+    _control_name(text) {
+        return html`<span class="visually-hidden">${text}</span>`;
+    }
+
+    /*
         Only shown when the entity does not expose a device_class attribute of its own.
         DEVICE_CLASSES carries metadata for temperature only (F/C unit conversion), so this
         is a plain on/off toggle rather than a picker over the whole HA device_class enum.
@@ -4366,6 +4381,7 @@ class HeatmapCardEditor extends LitElement {
             <div class="toggle-row">
                 <label>Treat as temperature</label>
                 <ha-switch
+                    aria-label="Treat as temperature"
                     .checked=${this._config.device_class === 'temperature'}
                     @change=${(e) => {
                         const config = deep_clone(this._config);
@@ -4377,7 +4393,7 @@ class HeatmapCardEditor extends LitElement {
                         }
                         this._dispatch_config(config);
                     }}
-                ></ha-switch>
+                >${this._control_name('Treat as temperature')}</ha-switch>
             </div>
         `;
     }
@@ -4396,6 +4412,7 @@ class HeatmapCardEditor extends LitElement {
             <div class="toggle-row">
                 <label>Treat as fluctuating value (not a cumulative meter)</label>
                 <ha-switch
+                    aria-label="Treat as fluctuating value (not a cumulative meter)"
                     .checked=${this._config.treat_as === 'measurement'}
                     @change=${(e) => {
                         const config = deep_clone(this._config);
@@ -4406,7 +4423,7 @@ class HeatmapCardEditor extends LitElement {
                         }
                         this._dispatch_config(config);
                     }}
-                ></ha-switch>
+                >${this._control_name('Treat as fluctuating value (not a cumulative meter)')}</ha-switch>
             </div>
         `;
     }
@@ -4425,6 +4442,7 @@ class HeatmapCardEditor extends LitElement {
             <div class="toggle-row">
                 <label>Smooth low-precision readings</label>
                 <ha-switch
+                    aria-label="Smooth low-precision readings"
                     .checked=${this._config.smoothing === true}
                     @change=${(e) => {
                         const config = deep_clone(this._config);
@@ -4435,7 +4453,7 @@ class HeatmapCardEditor extends LitElement {
                         }
                         this._dispatch_config(config);
                     }}
-                ></ha-switch>
+                >${this._control_name('Smooth low-precision readings')}</ha-switch>
             </div>
         `;
     }
@@ -4550,13 +4568,14 @@ class HeatmapCardEditor extends LitElement {
         return html`
             <h3>Range</h3>
             <div>
-                <label class="range-label">Minimum</label>
+                <label for="range-min" class="range-label">Minimum</label>
                 <input
+                    id="range-min"
                     type="number"
                     placeholder=${placeholder('min')}
                     .value=${minAuto ? '' : String(this._config.data.min)}
                     ?disabled=${minAuto}
-                    style="display:block;width:100%;padding:8px 12px;font-size:14px;border:1px solid var(--divider-color,#e0e0e0);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);box-sizing:border-box;"
+                    style="display:block;width:100%;padding:8px 12px;font-size:14px;border:1px solid var(--secondary-text-color,#727272);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);box-sizing:border-box;"
                     @change=${(e) => {
                         e.stopPropagation();
                         const config = deep_clone(this._config);
@@ -4567,20 +4586,22 @@ class HeatmapCardEditor extends LitElement {
                 >
                 <div class="checkbox-row">
                     <ha-checkbox
+                        aria-label="Infer minimum from the sensor data"
                         .checked=${minAuto}
                         @change=${(e) => this._range_auto_changed('min', e)}
-                    ></ha-checkbox>
+                    >${this._control_name('Infer minimum from the sensor data')}</ha-checkbox>
                     <label>Infer from the sensor data</label>
                 </div>
             </div>
             <div>
-                <label class="range-label">Maximum</label>
+                <label for="range-max" class="range-label">Maximum</label>
                 <input
+                    id="range-max"
                     type="number"
                     placeholder=${placeholder('max')}
                     .value=${maxAuto ? '' : String(this._config.data.max)}
                     ?disabled=${maxAuto}
-                    style="display:block;width:100%;padding:8px 12px;font-size:14px;border:1px solid var(--divider-color,#e0e0e0);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);box-sizing:border-box;"
+                    style="display:block;width:100%;padding:8px 12px;font-size:14px;border:1px solid var(--secondary-text-color,#727272);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);box-sizing:border-box;"
                     @change=${(e) => {
                         e.stopPropagation();
                         const config = deep_clone(this._config);
@@ -4591,9 +4612,10 @@ class HeatmapCardEditor extends LitElement {
                 >
                 <div class="checkbox-row">
                     <ha-checkbox
+                        aria-label="Infer maximum from the sensor data"
                         .checked=${maxAuto}
                         @change=${(e) => this._range_auto_changed('max', e)}
-                    ></ha-checkbox>
+                    >${this._control_name('Infer maximum from the sensor data')}</ha-checkbox>
                     <label>Infer from the sensor data</label>
                 </div>
             </div>
@@ -4788,15 +4810,17 @@ class HeatmapCardEditor extends LitElement {
                     <div class="custom-step-row">
                         <input
                             type="color"
+                            aria-label="Color for step ${i + 1}"
                             .value=${step.color || '#888888'}
                             @change=${(e) => this._update_step_color(i, e.target.value)}
                         >
                         ${is_absolute ? html`
                             <input
                                 type="number"
+                                aria-label="Value for step ${i + 1}"
                                 .value=${step.value ?? ''}
                                 @change=${(e) => this._update_step_value(i, e.target.value)}
-                                style="flex:1;padding:4px 8px;font-size:14px;border:1px solid var(--divider-color,#e0e0e0);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);"
+                                style="flex:1;padding:4px 8px;font-size:14px;border:1px solid var(--secondary-text-color,#727272);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);"
                             >
                             ${unit ? html`<span class="custom-step-unit">${unit}</span>` : ''}
                         ` : html`<span style="flex:1;padding:0 8px;align-self:center;">Step ${i + 1}</span>`}
@@ -4805,12 +4829,13 @@ class HeatmapCardEditor extends LitElement {
                             @click=${() => this._remove_step(i)}
                             .disabled=${steps.length <= 2}
                             title="Remove"
+                            aria-label="Remove step ${i + 1}"
                         >&#x2715;</button>
                     </div>
                 `)}
             </div>
             <div>
-                <a href="#" @click=${(e) => { e.preventDefault(); this._add_step(); }}>+ Add threshold</a>
+                <button class="add-step" @click=${() => this._add_step()}>+ Add threshold</button>
             </div>
             ${range_section}
         `;
@@ -5132,11 +5157,13 @@ class HeatmapCardEditor extends LitElement {
         ];
 
         /*
-            Hover text for the info icon beside Mode. A native title rather than HA's
-            ha-help-tooltip: that element is only registered once some HA panel has
-            loaded it, so in a card editor it can silently render as nothing.
+            Help for the info button beside Mode: hover text, and a paragraph the button
+            shows and hides, so keyboard, touch and screen reader users can read it too.
+            Native markup rather than HA's ha-help-tooltip: that element is only registered
+            once some HA panel has loaded it, so in a card editor it can silently render as
+            nothing.
         */
-        const high_res_tooltip = 'High Res Mode: one column per 5 minutes (or the minutes per ' +
+        const high_res_help = 'High Res Mode: one column per 5 minutes (or the minutes per ' +
             'cell you choose), from Home Assistant\'s 5-minute statistics, with one row per hour ' +
             'or one row per day. For fast-changing sensors. Only covers recent history: 5-minute ' +
             'statistics are kept for the recorder\'s purge_keep_days, 10 days by default.';
@@ -5211,13 +5238,15 @@ class HeatmapCardEditor extends LitElement {
                             .value=${this._config.mode ?? 'hourly'}
                             .configValue=${"mode"}
                         ></ha-selector>
-                        <ha-icon
-                            class="info-icon"
-                            icon="mdi:information-outline"
-                            title=${high_res_tooltip}
-                            aria-label=${high_res_tooltip}
-                        ></ha-icon>
+                        <button
+                            class="info-button"
+                            title=${high_res_help}
+                            aria-label="About High Res Mode"
+                            aria-expanded=${this._mode_help_open ? 'true' : 'false'}
+                            @click=${() => { this._mode_help_open = !this._mode_help_open; }}
+                        ><ha-icon icon="mdi:information-outline"></ha-icon></button>
                     </div>
+                    ${this._mode_help_open ? html`<p class="mode-help">${high_res_help}</p>` : ''}
                     ${is_daily ? html`
                         <ha-selector
                             .hass=${this.myhass}
@@ -5314,6 +5343,7 @@ class HeatmapCardEditor extends LitElement {
                     <div class="toggle-row">
                         <label>Show history navigation</label>
                         <ha-switch
+                            aria-label="Show history navigation"
                             .checked=${this._config.display?.navigation !== false}
                             @change=${(e) => {
                                 const config = deep_clone(this._config);
@@ -5321,11 +5351,12 @@ class HeatmapCardEditor extends LitElement {
                                 config.display.navigation = e.target.checked;
                                 this._dispatch_config(config);
                             }}
-                        ></ha-switch>
+                        >${this._control_name('Show history navigation')}</ha-switch>
                     </div>
                     <div class="toggle-row">
                         <label>Show legend</label>
                         <ha-switch
+                            aria-label="Show legend"
                             .checked=${this._config.display?.legend !== false}
                             @change=${(e) => {
                                 const config = deep_clone(this._config);
@@ -5333,11 +5364,12 @@ class HeatmapCardEditor extends LitElement {
                                 config.display.legend = e.target.checked;
                                 this._dispatch_config(config);
                             }}
-                        ></ha-switch>
+                        >${this._control_name('Show legend')}</ha-switch>
                     </div>
                     <div class="toggle-row">
                         <label>Show cell labels</label>
                         <ha-switch
+                            aria-label="Show cell labels"
                             .checked=${this._config.display?.labels === true}
                             @change=${(e) => {
                                 const config = deep_clone(this._config);
@@ -5345,12 +5377,13 @@ class HeatmapCardEditor extends LitElement {
                                 config.display.labels = e.target.checked;
                                 this._dispatch_config(config);
                             }}
-                        ></ha-switch>
+                        >${this._control_name('Show cell labels')}</ha-switch>
                     </div>
                     ${this._config.display?.labels === true ? html`
                         <div class="toggle-row">
                             <label>Hide zero values in labels</label>
                             <ha-switch
+                                aria-label="Hide zero values in labels"
                                 .checked=${this._config.display?.hide_zero === true}
                                 @change=${(e) => {
                                     const config = deep_clone(this._config);
@@ -5358,7 +5391,7 @@ class HeatmapCardEditor extends LitElement {
                                     config.display.hide_zero = e.target.checked;
                                     this._dispatch_config(config);
                                 }}
-                            ></ha-switch>
+                            >${this._control_name('Hide zero values in labels')}</ha-switch>
                         </div>
                     ` : ''}
                     <ha-selector
@@ -5577,9 +5610,36 @@ class HeatmapCardEditor extends LitElement {
         .mode-row ha-selector {
             flex: 1;
         }
-        .info-icon {
+        .info-button {
+            display: flex;
+            background: none;
+            border: none;
+            padding: 4px;
             color: var(--secondary-text-color);
             cursor: help;
+        }
+        /* Tucked up under the Mode row it explains, inside the 24px section gap. */
+        .section > .mode-help {
+            margin: -16px 0 0 0;
+            font-size: 14px;
+            color: var(--secondary-text-color);
+        }
+
+        /*
+            Text that names a control for screen readers only - see _control_name().
+            Clipped rather than display: none, which would drop it from the
+            accessibility tree along with the box.
+        */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+            border: 0;
         }
 
         /*
@@ -5645,7 +5705,8 @@ class HeatmapCardEditor extends LitElement {
         .custom-step-row input[type="color"] {
             width: 40px;
             height: 40px;
-            border: none;
+            /* A boundary of its own, or a step coloured like the card disappears. */
+            border: 1px solid var(--secondary-text-color);
             padding: 2px;
             cursor: pointer;
             border-radius: 4px;
@@ -5658,6 +5719,18 @@ class HeatmapCardEditor extends LitElement {
             color: var(--secondary-text-color);
             font-size: 1.1em;
             padding: 4px 8px;
+        }
+
+        /* A real button (it was a link), styled like the card's history buttons. */
+        .add-step {
+            background: transparent;
+            color: var(--primary-text-color);
+            border: 1px solid var(--secondary-text-color);
+            border-radius: 8px;
+            padding: 4px 12px;
+            font: inherit;
+            font-size: 14px;
+            cursor: pointer;
         }
 
         .custom-step-remove:disabled {
