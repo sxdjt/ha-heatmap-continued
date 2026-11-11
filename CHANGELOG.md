@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2026.11.10-beta.4] - 2026-11-10
+
+Pre-release for testing. Adds to 2026.11.10-beta.3, whose changes are listed below.
 
 ### Fixed
 - Visual editor accessibility (WCAG 2.1 AA):
