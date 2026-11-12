@@ -1750,7 +1750,9 @@ class HeatmapCard extends LitElement {
             <ha-card header="${this.meta.title}" id="card">
                 <div class="card-content">
                     ${this.render_navigation()}
-                    <table id="grid" class="${this.grid_css_class()}" style="${this.grid_style()}">
+                    <p id="grid-hint" class="visually-hidden">Use the arrow keys to move between cells. Enter shows the value.</p>
+                    <table id="grid" class="${this.grid_css_class()}" style="${this.grid_style()}"
+                        aria-describedby="grid-hint" @keydown=${this.grid_keydown}>
                         <thead>
                             <tr class="hr${this.myhass.locale.time_format}">
                                 <th class="hm-row-title">${this.corner_label()}</th>
@@ -2534,48 +2536,58 @@ class HeatmapCard extends LitElement {
     render_tooltip() {
         var content = '';
         if (this.selected_element_data) {
-            // Todo: See if we can use the precision from the entity here.
-            var rendered_value;
-            // selected_val is read via the data-val attribute in the DOM. The way it's set via Lit,
-            // null translates into ''.
-            if (this.selected_element_data.val === '') {
-                rendered_value = this.myhass.localize('ui.components.data-table.no-data'); // "No data"
-            } else {
-                const val = +(parseFloat(this.selected_element_data.val).toFixed(this.delta_decimals()));
-                rendered_value = `${val} ${this.meta.scale.unit || this.meta.unit_of_measurement}`;
-            }
-
-            if (this.config.mode === 'daily') {
-                // In daily mode, compute the exact calendar date from week row + day column.
-                // row.nativeDate is the Monday of that week; col is 0 (Mon) through 6 (Sun).
-                const weekMonday = this.grid[this.selected_element_data.row]?.nativeDate;
-                const col = parseInt(this.selected_element_data.col);
-                const cellDate = new Date(weekMonday);
-                cellDate.setDate(cellDate.getDate() + col);
-                const date_label = cellDate.toLocaleDateString(
-                    this.meta.language,
-                    { weekday: 'short', month: 'short', day: '2-digit' }
-                );
-                content = html`<div class="meta">${date_label}</div><div class="value">${rendered_value}</div>`;
-            } else if (this.is_minute_mode()) {
-                content = html`<div class="meta">${this.minute_cell_window(this.selected_element_data.row, this.selected_element_data.col)}</div><div class="value">${rendered_value}</div>`;
-            } else {
-                const date = this.grid[this.selected_element_data.row]?.date;
-                // col is a slot index, which is an hour only when time_interval is 1.
-                const interval = this.time_interval();
-                const hr = parseInt(this.selected_element_data.col) * interval;
-                var from = new Date('2022-03-20 00:00:00').setHours(hr);
-                var to = new Date('2022-03-20 00:00:00').setHours(hr + interval);
-                var time_format = new Intl.DateTimeFormat('sv-SE', {'hour': 'numeric', 'minute': 'numeric'});
-                if (this.myhass.locale.time_format == '12') {
-                    time_format = new Intl.DateTimeFormat('en-US', {'hour': 'numeric'});
-                }
-                content = html`<div class="meta">${date} ${time_format.format(from)} - ${time_format.format(to)}</div><div class="value">${rendered_value}</div>`;
-            }
+            const { meta, value } = this.cell_description(this.selected_element_data);
+            content = html`<div class="meta">${meta}</div><div class="value">${value}</div>`;
         }
         return html`
             <div id="tooltip" class="${this.tooltipOpen ? 'active' : 'hidden'}">${content}</div>
         `
+    }
+
+    /*
+        The time window and value of one cell, as { meta, value } strings. Used by the
+        tooltip and, as "meta: value", by the keyboard-focused cell's aria-label.
+
+        `data` is a cell's dataset (val, row, col). data-val is '' for a cell with no
+        reading (Lit renders null that way), which reads as HA's localised "No data".
+    */
+    cell_description(data) {
+        // Todo: See if we can use the precision from the entity here.
+        var rendered_value;
+        if (data.val === '') {
+            rendered_value = this.myhass.localize('ui.components.data-table.no-data'); // "No data"
+        } else {
+            const val = +(parseFloat(data.val).toFixed(this.delta_decimals()));
+            rendered_value = `${val} ${this.meta.scale.unit || this.meta.unit_of_measurement}`;
+        }
+
+        if (this.config.mode === 'daily') {
+            // In daily mode, compute the exact calendar date from week row + day column.
+            // row.nativeDate is the Monday of that week; col is 0 (Mon) through 6 (Sun).
+            const weekMonday = this.grid[data.row]?.nativeDate;
+            const col = parseInt(data.col);
+            const cellDate = new Date(weekMonday);
+            cellDate.setDate(cellDate.getDate() + col);
+            const date_label = cellDate.toLocaleDateString(
+                this.meta.language,
+                { weekday: 'short', month: 'short', day: '2-digit' }
+            );
+            return { meta: date_label, value: rendered_value };
+        }
+        if (this.is_minute_mode()) {
+            return { meta: this.minute_cell_window(data.row, data.col), value: rendered_value };
+        }
+        const date = this.grid[data.row]?.date;
+        // col is a slot index, which is an hour only when time_interval is 1.
+        const interval = this.time_interval();
+        const hr = parseInt(data.col) * interval;
+        var from = new Date('2022-03-20 00:00:00').setHours(hr);
+        var to = new Date('2022-03-20 00:00:00').setHours(hr + interval);
+        var time_format = new Intl.DateTimeFormat('sv-SE', {'hour': 'numeric', 'minute': 'numeric'});
+        if (this.myhass.locale.time_format == '12') {
+            time_format = new Intl.DateTimeFormat('en-US', {'hour': 'numeric'});
+        }
+        return { meta: `${date} ${time_format.format(from)} - ${time_format.format(to)}`, value: rendered_value };
     }
 
     /*
@@ -2666,10 +2678,13 @@ class HeatmapCard extends LitElement {
         const oldSelection = this.renderRoot.querySelector("#selected");
         const card = this.renderRoot.querySelector("#card");
         const tooltip = this.renderRoot.querySelector("#tooltip");
-        const target = e.target;
+        // A click can land on the label span inside the cell
+        const target = e.target.closest?.('td.hm-box') ?? e.target;
+        // Tab returns to the last cell used, by mouse or keyboard
+        this._active_cell = { row: target.dataset.row, col: target.dataset.col };
         if (oldSelection) {
             oldSelection.removeAttribute('id');
-            if (oldSelection === e.target) {
+            if (oldSelection === target) {
                 this.close_tooltip();
                 return;
             }
@@ -2702,6 +2717,80 @@ class HeatmapCard extends LitElement {
         if (oldSelection) { oldSelection.removeAttribute('id'); }
         this.selected_element_data = '';
         this.tooltipOpen = false;
+    }
+
+    /*
+        Keyboard access to the cells (roving tabindex). The grid is one Tab stop: only
+        the active cell has tabindex 0, the rest -1. Arrow keys move between cells in the
+        table as laid out (so it works in both orientations), Home and End go to the ends
+        of a row, Enter or Space toggles the tooltip, and Escape closes it (see
+        connectedCallback). When the tooltip is open it follows the focused cell.
+
+        Only the focused cell gets an aria-label ("<time window>: <value>"); labelling every
+        cell on every render would cost too much in minute mode, which has thousands.
+    */
+    grid_keydown(e) {
+        const cell = e.target.closest?.('td.hm-box');
+        if (!cell) { return; }
+        const cells_of = (row) => [...row.querySelectorAll('td.hm-box')];
+        const row = cell.parentElement;
+        const in_row = cells_of(row);
+        const index = in_row.indexOf(cell);
+        const rows = [...row.parentElement.children].filter((r) => r.querySelector('td.hm-box'));
+        const row_index = rows.indexOf(row);
+        const same_column = (r) => {
+            if (!r) { return undefined; }
+            const cells = cells_of(r);
+            return cells[Math.min(index, cells.length - 1)];
+        };
+        let next;
+        switch (e.key) {
+            case 'ArrowRight': next = in_row[index + 1]; break;
+            case 'ArrowLeft': next = in_row[index - 1]; break;
+            case 'ArrowDown': next = same_column(rows[row_index + 1]); break;
+            case 'ArrowUp': next = same_column(rows[row_index - 1]); break;
+            case 'Home': next = in_row[0]; break;
+            case 'End': next = in_row[in_row.length - 1]; break;
+            case 'Enter':
+            case ' ':
+                e.preventDefault();
+                this.toggle_tooltip({ target: cell });
+                return;
+            default:
+                return;
+        }
+        e.preventDefault();
+        if (!next) { return; }
+        this._active_cell = { row: next.dataset.row, col: next.dataset.col };
+        this.sync_cell_tabindex();
+        next.focus();
+        if (this.tooltipOpen) { this.toggle_tooltip({ target: next }); }
+    }
+
+    /*
+        Gives tabindex 0 to the active cell (or the first cell when there is none or it
+        is gone after new data) and -1 to every other cell, and labels the active cell.
+        Runs after every render and on every keyboard move.
+    */
+    sync_cell_tabindex() {
+        const cells = this.renderRoot?.querySelectorAll('td.hm-box');
+        if (!cells || cells.length === 0) { return; }
+        const wanted = this._active_cell;
+        let active = wanted
+            ? this.renderRoot.querySelector(`td.hm-box[data-row="${wanted.row}"][data-col="${wanted.col}"]`)
+            : null;
+        if (!active) { active = cells[0]; }
+        for (const cell of cells) {
+            const tab_index = (cell === active) ? 0 : -1;
+            if (cell.tabIndex !== tab_index || !cell.hasAttribute('tabindex')) { cell.tabIndex = tab_index; }
+        }
+        const { meta, value } = this.cell_description(active.dataset);
+        active.setAttribute('aria-label', `${meta}: ${value}`);
+    }
+
+    updated(changed) {
+        super.updated?.(changed);
+        this.sync_cell_tabindex();
     }
 
     /*
@@ -4056,6 +4145,22 @@ class HeatmapCard extends LitElement {
                 transform: translateY(-50%);
                 white-space: nowrap;
             }
+            /* Keyboard focus (see grid_keydown). Inset so it stays inside small cells. */
+            .hm-box:focus-visible {
+                outline: 2px solid var(--primary-text-color);
+                outline-offset: -2px;
+            }
+            .visually-hidden {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
             #selected {
                 outline: 6px currentcolor solid;
                 z-index: 2;
@@ -4302,7 +4407,10 @@ class HeatmapCardEditor extends LitElement {
             entity: undefined,
             device_class: undefined,
             scale: undefined,
-            _mode_help_open: {}
+            _mode_help_open: {},
+            // Step color text the user typed that chroma cannot parse, by step index. Kept
+            // out of the config (the card's gradient throws on it) and shown with an error.
+            _step_color_drafts: {}
         };
     }
 
@@ -4491,6 +4599,7 @@ class HeatmapCardEditor extends LitElement {
             ${this._config.secondary_entity ? html`
                 <ha-selector
                     .hass=${this.myhass}
+                    .required=${false}
                     .label=${"Operation"}
                     .selector=${{select: {options: operation_options}}}
                     .value=${this._config.operation ?? 'difference'}
@@ -4761,6 +4870,7 @@ class HeatmapCardEditor extends LitElement {
             <h3>Color scale</h3>
             <ha-selector
                 .hass=${this.myhass}
+                .required=${false}
                 .label=${"Scale"}
                 .selector=${{select: {options}}}
                 .value=${is_custom ? CUSTOM_SCALE_OPTION : this._scale_key()}
@@ -4797,6 +4907,7 @@ class HeatmapCardEditor extends LitElement {
         return html`
             <ha-selector
                 .hass=${this.myhass}
+                .required=${false}
                 .label=${"Scale type"}
                 .selector=${{select: {options: [
                     {value: 'absolute', label: 'Fixed thresholds (value + color)'},
@@ -4806,13 +4917,26 @@ class HeatmapCardEditor extends LitElement {
                 @value-changed=${this._custom_type_changed}
             ></ha-selector>
             <div class="custom-steps">
-                ${steps.map((step, i) => html`
+                ${steps.map((step, i) => {
+                    const draft = this._step_color_drafts?.[i];
+                    const invalid = draft !== undefined;
+                    const error_id = `step-color-error-${i}`;
+                    return html`
                     <div class="custom-step-row">
                         <input
                             type="color"
+                            aria-label="Color picker for step ${i + 1}"
+                            .value=${chroma.valid(step.color) ? chroma(step.color).hex('rgb') : '#888888'}
+                            @change=${(e) => this._step_color_input(i, e.target.value)}
+                        >
+                        <input
+                            type="text"
+                            class="custom-step-color"
                             aria-label="Color for step ${i + 1}"
-                            .value=${step.color || '#888888'}
-                            @change=${(e) => this._update_step_color(i, e.target.value)}
+                            aria-invalid=${invalid ? 'true' : 'false'}
+                            aria-describedby=${invalid ? error_id : ''}
+                            .value=${invalid ? draft : (step.color || '')}
+                            @input=${(e) => this._step_color_input(i, e.target.value)}
                         >
                         ${is_absolute ? html`
                             <input
@@ -4832,10 +4956,16 @@ class HeatmapCardEditor extends LitElement {
                             aria-label="Remove step ${i + 1}"
                         >&#x2715;</button>
                     </div>
-                `)}
+                    ${invalid ? html`
+                        <p id=${error_id} class="error-text">
+                            <ha-icon icon="mdi:alert-circle" aria-hidden="true"></ha-icon>
+                            <span><strong>Error:</strong> Color for step ${i + 1} ${draft.trim() ? 'is not a valid color' : 'is required'}. Use a hex code (#FF0000) or a color name (red).</span>
+                        </p>
+                    ` : ''}
+                `; })}
             </div>
             <div>
-                <button class="add-step" @click=${() => this._add_step()}>+ Add threshold</button>
+                <ha-button class="add-step" appearance="plain" @click=${() => this._add_step()}>Add threshold</ha-button>
             </div>
             ${range_section}
         `;
@@ -5002,7 +5132,29 @@ class HeatmapCardEditor extends LitElement {
     _remove_step(index) {
         const config = deep_clone(this._config);
         config.scale.steps.splice(index, 1);
+        // Drafts are keyed by index, which the removal just shifted
+        this._step_color_drafts = {};
         this._dispatch_config(config);
+        // The removed row took the focused button with it; keep focus in the step list
+        this.renderRoot?.querySelector('.add-step')?.focus();
+    }
+
+    /*
+        Text (or picker) input for a step color. A color chroma can parse is saved at
+        once; anything else stays in _step_color_drafts and shows an error, since saving
+        it would break the card's gradient.
+    */
+    _step_color_input(index, value) {
+        const drafts = { ...this._step_color_drafts };
+        const text = value.trim();
+        if (text && chroma.valid(text)) {
+            delete drafts[index];
+            this._step_color_drafts = drafts;
+            this._update_step_color(index, text);
+        } else {
+            drafts[index] = value;
+            this._step_color_drafts = drafts;
+        }
     }
 
     /*
@@ -5032,6 +5184,8 @@ class HeatmapCardEditor extends LitElement {
         const config = deep_clone(this._config);
         config.scale.steps[index].value = parsed;
         config.scale.steps.sort((a, b) => a.value - b.value);
+        // Re-sorting moves rows, and drafts are keyed by row index
+        this._step_color_drafts = {};
         this._dispatch_config(config);
     }
 
@@ -5222,6 +5376,7 @@ class HeatmapCardEditor extends LitElement {
             ${this.render_device_class_picker()}
             <ha-selector
                 .hass=${this.myhass}
+                .required=${false}
                 .label=${"Card title"}
                 .value=${this._config.title || ""}
                 .selector=${{text: {}}}
@@ -5233,6 +5388,7 @@ class HeatmapCardEditor extends LitElement {
                     <div class="mode-row">
                         <ha-selector
                             .hass=${this.myhass}
+                            .required=${false}
                             .label=${"Mode"}
                             .selector=${{select: {options: mode_options}}}
                             .value=${this._config.mode ?? 'hourly'}
@@ -5250,6 +5406,7 @@ class HeatmapCardEditor extends LitElement {
                     ${is_daily ? html`
                         <ha-selector
                             .hass=${this.myhass}
+                            .required=${false}
                             .label=${"Weeks"}
                             .value=${this._config.weeks ?? 12}
                             .selector=${{number: {min: 1, max: MAX_WEEKS, mode: 'box', step: 1}}}
@@ -5257,6 +5414,7 @@ class HeatmapCardEditor extends LitElement {
                         ></ha-selector>
                         <ha-selector
                             .hass=${this.myhass}
+                            .required=${false}
                             .label=${"Aggregate"}
                             .selector=${{select: {options: aggregate_options}}}
                             .value=${this._config.aggregate ?? 'mean'}
@@ -5265,6 +5423,7 @@ class HeatmapCardEditor extends LitElement {
                     ` : is_minute ? html`
                         <ha-selector
                             .hass=${this.myhass}
+                            .required=${false}
                             .label=${"Rows"}
                             .selector=${{select: {options: minute_rows_options}}}
                             .value=${this._config.minute_rows ?? 'hour'}
@@ -5272,6 +5431,7 @@ class HeatmapCardEditor extends LitElement {
                         ></ha-selector>
                         <ha-selector
                             .hass=${this.myhass}
+                            .required=${false}
                             .label=${"Days"}
                             .value=${this._config.days ?? (is_day_rows ? DEFAULT_MINUTE_DAY_ROW_DAYS : DEFAULT_MINUTE_DAYS)}
                             .selector=${{number: {min: 1, max: (is_day_rows ? MAX_DAYS : MAX_MINUTE_DAYS), mode: 'box', step: 1}}}
@@ -5280,6 +5440,7 @@ class HeatmapCardEditor extends LitElement {
                         ></ha-selector>
                         <ha-selector
                             .hass=${this.myhass}
+                            .required=${false}
                             .label=${"Minutes per cell"}
                             .selector=${{select: {options: minute_interval_options}}}
                             .value=${String(this._config.minute_interval ?? STATISTIC_MINUTES)}
@@ -5290,6 +5451,7 @@ class HeatmapCardEditor extends LitElement {
                     ` : html`
                         <ha-selector
                             .hass=${this.myhass}
+                            .required=${false}
                             .label=${"Days"}
                             .value=${this._config.days ?? 21}
                             .selector=${{number: {min: 1, max: MAX_DAYS, mode: 'box', step: 1}}}
@@ -5297,6 +5459,7 @@ class HeatmapCardEditor extends LitElement {
                         ></ha-selector>
                         <ha-selector
                             .hass=${this.myhass}
+                            .required=${false}
                             .label=${"Hours per cell"}
                             .selector=${{select: {options: interval_options}}}
                             .value=${String(this._config.time_interval ?? 1)}
@@ -5313,6 +5476,7 @@ class HeatmapCardEditor extends LitElement {
                 <div class="section">
                     <ha-selector
                         .hass=${this.myhass}
+                        .required=${false}
                         .label=${"Layout"}
                         .selector=${{select: {options: orientation_options}}}
                         .value=${this._config.orientation ?? 'vertical'}
@@ -5320,6 +5484,7 @@ class HeatmapCardEditor extends LitElement {
                     ></ha-selector>
                     <ha-selector
                         .hass=${this.myhass}
+                        .required=${false}
                         .label=${"Grid height (px, blank for automatic)"}
                         .value=${this._config.display?.height ?? ''}
                         .selector=${{number: {min: MIN_GRID_HEIGHT_PX, max: MAX_GRID_HEIGHT_PX, mode: 'box', step: 10}}}
@@ -5327,6 +5492,7 @@ class HeatmapCardEditor extends LitElement {
                     ></ha-selector>
                     <ha-selector
                         .hass=${this.myhass}
+                        .required=${false}
                         .label=${(this._config.mode === 'minute' && this._config.minute_rows === 'day')
                             ? "Label every Nth hour (blank for automatic)"
                             : "Label every Nth time slot (blank for automatic)"}
@@ -5396,6 +5562,7 @@ class HeatmapCardEditor extends LitElement {
                     ` : ''}
                     <ha-selector
                         .hass=${this.myhass}
+                        .required=${false}
                         .label=${"Label / legend decimal places"}
                         .value=${this._config.display?.decimals ?? ''}
                         .selector=${{number: {min: 0, max: MAX_DECIMAL_PLACES, mode: 'box', step: 1}}}
@@ -5667,8 +5834,11 @@ class HeatmapCardEditor extends LitElement {
         }
 
 
+        /* Primary text color for 4.5:1 (--primary-color is 2.6:1); underlined so links
+           do not rely on color alone */
         a:link, a:visited {
-            color: var(--primary-color);
+            color: var(--primary-text-color);
+            text-decoration: underline;
         }
 
         .scale-docs {
@@ -5722,15 +5892,38 @@ class HeatmapCardEditor extends LitElement {
         }
 
         /* A real button (it was a link), styled like the card's history buttons. */
-        .add-step {
-            background: transparent;
-            color: var(--primary-text-color);
-            border: 1px solid var(--secondary-text-color);
-            border-radius: 8px;
-            padding: 4px 12px;
-            font: inherit;
+        .custom-step-color {
+            width: 7em;
+            min-width: 0;
+            padding: 4px 8px;
             font-size: 14px;
-            cursor: pointer;
+            border: 1px solid var(--secondary-text-color, #727272);
+            border-radius: 4px;
+            background: var(--card-background-color, #fff);
+            color: var(--primary-text-color);
+            box-sizing: border-box;
+        }
+
+        .custom-step-color[aria-invalid='true'] {
+            border: 2px solid var(--error-color, #db4437);
+        }
+
+        /* Text stays primary color for 4.5:1; red only on non-text parts, which need 3:1 */
+        .error-text {
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--primary-text-color);
+            margin: 6px 0 0 0;
+            padding: 4px 8px;
+            border-left: 3px solid var(--error-color, #db4437);
+        }
+
+        .error-text ha-icon {
+            flex: 0 0 auto;
+            color: var(--error-color, #db4437);
+            --mdc-icon-size: 16px;
         }
 
         .custom-step-remove:disabled {
@@ -5776,7 +5969,7 @@ window.customCards.push({
     }
 });
 console.info(
-    "%c HEATMAP-CARD %c 2026.11.10 ",
+    "%c HEATMAP-CARD %c 2026.11.12 ",
     "color: black; background: #F2720C; font-weight: 600;",
     "color: black; background: #00a5c9; font-weight: 600;"
 );

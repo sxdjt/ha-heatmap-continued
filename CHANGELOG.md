@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026.11.12] - 2026-11-12
+
+Accessibility improvements (keyboard, screen reader and contrast).
+
+### Fixed
+- Keyboard: the grid is reachable with Tab; arrow keys, Home and End move between cells, Enter or Space shows the value, Escape closes it.
+- Screen readers: the focused cell announces its time window and value.
+- Visual editor: no false required markers; step colors can be typed, with an error for invalid colors; links meet contrast requirements; focus moves to Add threshold after removing a step.
+
 ## [2026.11.10] - 2026-11-10
 
 Supersedes the 2026.11.10-beta.1 to 2026.11.10-beta.4 pre-releases; everything below is the

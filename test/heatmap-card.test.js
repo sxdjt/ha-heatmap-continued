@@ -1154,3 +1154,17 @@ test('the device_class switch reflects and toggles device_class: temperature', (
     assert.equal('device_class' in on.dispatched[0], false);
     assert.equal(on._config.device_class, 'temperature', 'editor config is cloned, not mutated');
 });
+
+test('cell_description gives the time window and value shared by the tooltip and the cell label', () => {
+    const card = makeCard({
+        config: { mode: 'hourly', time_interval: 2 },
+        meta: { scale: { unit: '°F' }, unit_of_measurement: '°F' },
+        myhass: { locale: { time_format: '24' }, localize: (key) => (key.endsWith('no-data') ? 'No data' : key) },
+        grid: [{ date: '13 Oct' }],
+    });
+    card.delta_decimals = () => 1;
+    const described = card.cell_description({ val: '38.41', row: '0', col: '1' });
+    assert.equal(described.meta, '13 Oct 02:00 - 04:00');
+    assert.equal(described.value, '38.4 °F');
+    assert.equal(card.cell_description({ val: '', row: '0', col: '0' }).value, 'No data');
+});

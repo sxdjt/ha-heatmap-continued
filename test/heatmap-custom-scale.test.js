@@ -115,7 +115,10 @@ test('_scale_key resolves the scale the card actually uses', () => {
 function picker(editor) {
     const template = editor.render_scale_picker();
     const selector = template.values.find((value) => value?.select);
-    return { template, options: selector.select.options, value: template.values[3] };
+    // Find the .value binding by name rather than position, so adding bindings to the
+    // selector does not break the lookup
+    const value_index = template.strings.findIndex((part) => /\.value=$/.test(part));
+    return { template, options: selector.select.options, value: template.values[value_index] };
 }
 
 test('Custom is the first Scale option, then every built-in', () => {
@@ -495,7 +498,7 @@ test('every control in a step row is named after its step', () => {
 test('adding a step is a button, not a link', () => {
     const scale = { type: 'relative', steps: [{ color: '#000000' }, { color: '#ffffff' }] };
     const markup = text(makeEditor({ config: { scale } }).editor.render_custom_scale_editor());
-    assert.match(markup, /<button class="add-step"[\s\S]*?>\+ Add threshold<\/button>/);
+    assert.match(markup, /<ha-button class="add-step"[\s\S]*?>Add threshold<\/ha-button>/);
     assert.doesNotMatch(markup, /<a href="#"/);
 });
 
@@ -504,4 +507,44 @@ test('switches carry their label as a name', () => {
     const markup = text(editor.render_smoothing_toggle());
     assert.match(markup, /<ha-switch\s+aria-label="Smooth low-precision readings"/);
     assert.match(markup, /class="visually-hidden">Smooth low-precision readings<\/span><\/ha-switch>/);
+});
+
+test('each step has a color text field beside its picker', () => {
+    const scale = { type: 'absolute', steps: [{ value: 1, color: 'red' }, { value: 2, color: '#00ff00' }] };
+    const markup = text(makeEditor({ config: { scale } }).editor.render_custom_scale_editor());
+    assert.ok(markup.includes('aria-label="Color picker for step 1"'));
+    assert.match(markup, /class="custom-step-color"[\s\S]*?aria-label="Color for step 1"/);
+});
+
+test('a valid step color is saved; an invalid one is kept as a draft with an error', () => {
+    const scale = { type: 'absolute', steps: [{ value: 1, color: '#000000' }, { value: 2, color: '#ffffff' }] };
+    const { editor } = makeEditor({ config: { scale } });
+    const saved = [];
+    editor._update_step_color = (index, color) => saved.push([index, color]);
+    editor._step_color_drafts = {};
+
+    editor._step_color_input(0, 'red');
+    assert.deepEqual(saved, [[0, 'red']]);
+    assert.deepEqual(plain(editor._step_color_drafts), {});
+
+    editor._step_color_input(1, '#ff');
+    assert.equal(saved.length, 1, 'an invalid color is not saved');
+    assert.equal(editor._step_color_drafts[1], '#ff');
+    const markup = text(editor.render_custom_scale_editor());
+    assert.match(markup, /Error:<\/strong> Color for step 2 is not a valid color/);
+    assert.match(markup, /aria-invalid=true/);
+
+    editor._step_color_input(1, '');
+    assert.match(text(editor.render_custom_scale_editor()), /Color for step 2 is required/);
+});
+
+test('editor selectors are not marked required (no false asterisk)', () => {
+    const scale = { type: 'absolute', steps: [{ value: 1, color: '#000000' }, { value: 2, color: '#ffffff' }] };
+    const { editor } = makeEditor({ config: { scale } });
+    const markup = text(editor.render());
+    const selectors = markup.split('<ha-selector').slice(1).map((chunk) => chunk.split('</ha-selector>')[0]);
+    assert.ok(selectors.length >= 5, `expected several selectors, got ${selectors.length}`);
+    for (const selector of selectors) {
+        assert.match(selector, /\.required=false/, selector.slice(0, 80));
+    }
 });
