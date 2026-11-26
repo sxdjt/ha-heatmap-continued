@@ -355,8 +355,8 @@ test('the editor shows an info note, not a warning, for an entity without a stat
 });
 
 test('the editor still warns for a state_class the card cannot read', () => {
-    const template = editor({ 'sensor.a': { attributes: { state_class: 'measurement_angle' } } }).render_entity_warning();
-    assert.deepEqual([...template.values].slice(0, 3), ['Warning', 'warning', 'measurement_angle']);
+    const template = editor({ 'sensor.a': { attributes: { state_class: 'not_a_state_class' } } }).render_entity_warning();
+    assert.deepEqual([...template.values].slice(0, 3), ['Warning', 'warning', 'not_a_state_class']);
 });
 
 test('the editor says nothing for a readable state_class or an unloaded entity', () => {

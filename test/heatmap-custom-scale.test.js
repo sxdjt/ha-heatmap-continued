@@ -221,7 +221,7 @@ test('Custom falls back to 0 / 50 / 100 when there is no usable range', async ()
         'flat line': { ws: statsOf('mean', [5, 5, 5]) },
         'failed fetch': { ws: () => Promise.reject(new Error('boom')) },
         'secondary entity': { config: { secondary_entity: 'sensor.y' }, ws: statsOf('mean', [1, 9]) },
-        'unreadable state_class': { attributes: { state_class: 'measurement_angle' }, ws: statsOf('mean', [1, 9]) }
+        'unreadable state_class': { attributes: { state_class: 'not_a_state_class' }, ws: statsOf('mean', [1, 9]) }
     };
     const warn = console.warn;
     console.warn = () => {};

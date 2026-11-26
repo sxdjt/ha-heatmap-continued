@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - `device_class` in the config was ignored. It now picks the default scale for an entity without a device class of its own, and the visual editor's "Treat as temperature" switch converts the scale to a °F sensor's unit instead of showing °C steps.
 - CO2 (`carbon_dioxide`) and PM2.5 (`pm25`) sensors pick the `carbon dioxide` and `pm25` scales again; since 2026.10.9 they got `stoplight`.
 - The visual editor listed the `colorbrewer 5cl rdpu` scale as "ColorBrewer 5-class BuPu", the same name as the real BuPu scale.
+- Wind direction sensors (`state_class: measurement_angle`) showed "Unknown state_class" in hourly and minute mode, and the visual editor warned that they keep no statistics. They now render like measurements, and `time_interval` / `minute_interval` average them around the circle (350° and 10° give 0°, not 180°).
 
 ## [2026.11.12] - 2026-11-12
 

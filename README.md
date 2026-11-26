@@ -275,7 +275,8 @@ Allowed values are whole divisors of 24 (`1`, `2`, `3`, `4`, `6`, `8`, `12`, `24
 cell covers the same span. How values are combined depends on the entity: sensors recording
 a `measurement` (temperature, humidity) are averaged over the bucket, while `total` and
 `total_increasing` sensors (energy, rainfall) are summed, since their hourly values are
-increments. Hours with no data are skipped rather than counted as zero; a cell is blank only
+increments. Wind direction (`measurement_angle`) is averaged around the circle, so
+350° and 10° give 0°. Hours with no data are skipped rather than counted as zero; a cell is blank only
 when nothing at all was recorded in its window. Hourly mode only - daily mode's axis is the
 days of the week, and minute mode has its own `minute_interval` (see
 [Minute Mode](#minute-mode-example)).

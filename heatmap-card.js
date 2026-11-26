@@ -1043,17 +1043,6 @@ const ROW_TITLE_WIDTH_PX = 50;
     first paint would make the card flicker.
 */
 /*
-    Combine consecutive hourly slots into buckets of `interval` hours.
-
-    `use_sum` picks the aggregation, and it matters: total/total_increasing entities store
-    an hourly delta per slot, which must be added to describe a longer window, while
-    measurement entities store an hourly mean, which must be averaged. Summing means (or
-    averaging deltas) would silently produce nonsense values.
-
-    Slots with no data are skipped rather than counted as zero; a bucket is null only when
-    every hour in it is missing.
-*/
-/*
     Format an hour (0-23) in 12-hour style, e.g. 0 -> "12 AM", 13 -> "1 PM".
 */
 function hour_label_12h(hour) {
@@ -1062,7 +1051,21 @@ function hour_label_12h(hour) {
     return hour < 12 ? `${hour} AM` : `${hour - 12} PM`;
 }
 
-function bucket_values(vals, interval, use_sum) {
+/*
+    Combine consecutive hourly slots into buckets of `interval` hours.
+
+    `use_sum` picks the aggregation, and it matters: total/total_increasing entities store
+    an hourly delta per slot, which must be added to describe a longer window, while
+    measurement entities store an hourly mean, which must be averaged. Summing means (or
+    averaging deltas) would silently produce nonsense values.
+
+    `circular` averages angles in degrees around the circle (measurement_angle, e.g. wind
+    direction), as HA's own statistics do: 350 and 10 average to 0, not 180.
+
+    Slots with no data are skipped rather than counted as zero; a bucket is null only when
+    every hour in it is missing.
+*/
+function bucket_values(vals, interval, use_sum, circular = false) {
     const buckets = [];
     for (let start = 0; start < vals.length; start += interval) {
         const present = vals.slice(start, start + interval)
@@ -1071,10 +1074,26 @@ function bucket_values(vals, interval, use_sum) {
             buckets.push(null);
             continue;
         }
+        if (circular) {
+            buckets.push(circular_mean_degrees(present));
+            continue;
+        }
         const total = present.reduce((sum, value) => sum + value, 0);
         buckets.push(use_sum ? total : (total / present.length));
     }
     return buckets;
+}
+
+/*
+    Mean direction of angles in degrees, in [0, 360). Rounded to 6 places so floating
+    point noise cannot turn 0 into 359.9999999.
+*/
+function circular_mean_degrees(angles) {
+    const rad = Math.PI / 180;
+    const sin = angles.reduce((sum, a) => sum + Math.sin(a * rad), 0);
+    const cos = angles.reduce((sum, a) => sum + Math.cos(a * rad), 0);
+    const degrees = Math.round((Math.atan2(sin, cos) / rad) * 1e6) / 1e6;
+    return (degrees + 360) % 360;
 }
 
 function label_stride(label_count, available_px, min_px_per_label) {
@@ -1465,14 +1484,23 @@ function month_shortening_is_safe(language) {
 }
 
 /*
+    True for the state_classes whose statistics are per-period readings (mean/min/max)
+    rather than a running sum. measurement_angle (wind direction) is a measurement
+    whose mean HA takes around the circle.
+*/
+function is_measurement_class(state_class) {
+    return state_class === 'measurement' || state_class === 'measurement_angle';
+}
+
+/*
     True when two state_class values cannot be meaningfully combined: one is a
-    'measurement' and the other is not ('total' and 'total_increasing' are
+    measurement and the other is not ('total' and 'total_increasing' are
     interchangeable). Returns false when either class is unknown (undefined),
     since the entity may not be loaded yet or may be an external statistic.
 */
 function state_classes_incompatible(a, b) {
     if (a === undefined || b === undefined) { return false; }
-    return (a === 'measurement') !== (b === 'measurement');
+    return is_measurement_class(a) !== is_measurement_class(b);
 }
 
 /*
@@ -2069,9 +2097,10 @@ class HeatmapCard extends LitElement {
         // A `treat_as: measurement` total holds readings, not deltas, so it is averaged.
         const use_sum = ['total', 'total_increasing'].includes(this.meta.state_class) &&
             !this.treated_as_measurement();
+        const circular = (this.meta.state_class === 'measurement_angle');
         return grid.map((entry) => ({
             ...entry,
-            vals: bucket_values(entry.vals, interval, use_sum)
+            vals: bucket_values(entry.vals, interval, use_sum, circular)
         }));
     }
 
@@ -3137,6 +3166,7 @@ class HeatmapCard extends LitElement {
                 }
                 switch (this.uses_history() ? 'measurement' : this.meta.state_class) {
                     case 'measurement':
+                    case 'measurement_angle':
                         grids.push(measurement_grid(consumerData, 'mean'));
                         break;
                     case 'total':
@@ -3257,7 +3287,7 @@ class HeatmapCard extends LitElement {
         // A `total` entity running under `treat_as: measurement` (see get_recorder())
         // is displaying raw per-hour readings, not deltas, so it needs measurement's
         // null policy too: a missing hour must stay null, not silently become 0.
-        const isMeasurement = this.meta.state_class === 'measurement' ||
+        const isMeasurement = is_measurement_class(this.meta.state_class) ||
             this.treated_as_measurement();
         const out = [];
         for (const row of primary) {
@@ -5067,7 +5097,7 @@ class HeatmapCardEditor extends LitElement {
         const daily = (config.mode === 'daily');
         const minute = (config.mode === 'minute');
         let field;
-        if (!state_class || state_class === 'measurement') {
+        if (!state_class || is_measurement_class(state_class)) {
             field = (daily && ['min', 'max'].includes(config.aggregate)) ? config.aggregate : 'mean';
         } else if (state_class === 'total' && config.treat_as === 'measurement') {
             field = 'state';
@@ -5269,7 +5299,7 @@ class HeatmapCardEditor extends LitElement {
                 </ha-alert>
             `;
         }
-        if (['measurement', 'total', 'total_increasing'].includes(this.entity.attributes.state_class) === false) {
+        if (['measurement', 'measurement_angle', 'total', 'total_increasing'].includes(this.entity.attributes.state_class) === false) {
                 return html`
                     <ha-alert
                         .title=${"Warning"}

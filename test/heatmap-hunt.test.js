@@ -10,7 +10,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadCard } = require('./helpers/load-card.js');
 
-const { HeatmapCard, HeatmapCardEditor, HeatmapScales, vm_global } = loadCard();
+const { HeatmapCard, HeatmapCardEditor, HeatmapScales, bucket_values, vm_global } = loadCard();
 
 function hassWith(attributes) {
     return {
@@ -94,7 +94,7 @@ function liveCard(config, attributes = { state_class: 'measurement', friendly_na
     return { card, hass };
 }
 
-test('H4: a measurement_angle sensor (wind direction) renders as a measurement', { todo: true }, async () => {
+test('H4: a measurement_angle sensor (wind direction) renders as a measurement', async () => {
     const { card, hass } = liveCard({}, { state_class: 'measurement_angle', unit_of_measurement: '°' });
     hass.requests[0].resolve({ 'sensor.a': hourlyRows(270) });
     await settle();
@@ -103,7 +103,7 @@ test('H4: a measurement_angle sensor (wind direction) renders as a measurement',
     assert.ok(values(card).every((v) => v === 270));
 });
 
-test('H4: time_interval averages angles around the circle', { todo: true }, () => {
+test('H4: time_interval averages angles around the circle', () => {
     const card = Object.create(HeatmapCard.prototype);
     card.config = { mode: 'hourly', time_interval: 2 };
     card.meta = { state_class: 'measurement_angle' };
@@ -112,7 +112,41 @@ test('H4: time_interval averages angles around the circle', { todo: true }, () =
     assert.ok(Math.min(Math.abs(v), Math.abs(360 - v)) < 1e-9, `350 and 10 average to 0, got ${v}`);
 });
 
-test('H4: the editor does not warn that a measurement_angle sensor has no statistics', { todo: true }, () => {
+test('H4: circular buckets wrap, skip gaps and stay in [0, 360)', () => {
+    const near = (a, b) => Math.abs(a - b) < 1e-9;
+    const [a, b, c] = bucket_values([90, 180, 270, null, null, null], 2, false, true);
+    assert.ok(near(a, 135));
+    assert.equal(b, 270, 'a missing hour is skipped, not counted as 0 degrees');
+    assert.equal(c, null);
+    const [d] = bucket_values([340, 350], 2, false, true);
+    assert.ok(near(d, 345));
+    assert.deepEqual(Array.from(bucket_values([350, 10], 2, false)), [180], 'linear unless circular');
+});
+
+test('H4: measurement_angle combines like a measurement', () => {
+    const card = Object.create(HeatmapCard.prototype);
+    card.config = { mode: 'hourly' };
+    card.meta = { state_class: 'measurement_angle' };
+    const day = new Date(2026, 0, 1);
+    const [row] = card.combine_grids([{ date: 'd', nativeDate: day, vals: [10, 20] }],
+        [{ date: 'd', nativeDate: day, vals: [null, 5] }], 'difference');
+    assert.deepEqual(Array.from(row.vals), [null, 15], 'measurement null policy: a missing side stays null');
+});
+
+test('H4: measurement_angle pairs with measurement but not with a total', () => {
+    const conflict = (secondary_class) => {
+        const card = Object.create(HeatmapCard.prototype);
+        card.config = { entity: 'sensor.a', secondary_entity: 'sensor.b' };
+        card.meta = { state_class: 'measurement_angle' };
+        card.myhass = { states: { 'sensor.b': { attributes: { state_class: secondary_class } } } };
+        return card.secondary_state_class_conflict();
+    };
+    assert.equal(conflict('measurement'), null);
+    assert.equal(conflict('measurement_angle'), null);
+    assert.match(conflict('total_increasing'), /Cannot combine/);
+});
+
+test('H4: the editor does not warn that a measurement_angle sensor has no statistics', () => {
     const editor = Object.create(HeatmapCardEditor.prototype);
     editor.scales = new HeatmapScales();
     editor._config = { entity: 'sensor.a' };
