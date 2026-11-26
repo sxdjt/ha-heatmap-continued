@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - An entity that does not exist yet (Home Assistant still starting, renamed, or a typo) left the card blank with errors in the browser console. The card now says "Entity not available" and loads by itself once the entity appears.
 - After saving an edit, the dashboard card kept its old title, scale and data until the next state change anywhere in Home Assistant. It now reloads straight away.
 - Paging quickly through history could leave an older page's data on screen, if its answer arrived after the newer page's.
+- After switching dashboard views and back, axis labels stopped thinning out when the card was resized.
 
 ## [2026.11.12] - 2026-11-12
 

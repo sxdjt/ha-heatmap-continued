@@ -206,7 +206,7 @@ test('H6: a conflict status is not overwritten by an earlier fetch', async () =>
     assert.match(card.grid_status, /Cannot combine/);
 });
 
-test('H7: the grid is measured again after HA reconnects the card', { todo: true }, () => {
+test('H7: the grid is measured again after HA reconnects the card', () => {
     const observed = [];
     vm_global.ResizeObserver = class {
         observe(el) { observed.push(el); }

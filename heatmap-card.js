@@ -2862,6 +2862,9 @@ class HeatmapCard extends LitElement {
         };
         document.addEventListener('click', this._dismiss_on_click, true);
         document.addEventListener('keydown', this._dismiss_on_escape);
+        // HA reconnects a card it has shown before (switching views); firstUpdated()
+        // does not run again, and disconnectedCallback() stopped the observer.
+        if (this.hasUpdated) { this.observe_grid(); }
     }
 
     /*
@@ -2876,6 +2879,13 @@ class HeatmapCard extends LitElement {
         tests, where the constructor does not exist.
     */
     firstUpdated() {
+        this.observe_grid();
+    }
+
+    /*
+        Attach the grid ResizeObserver; see firstUpdated(). Also called on reconnect.
+    */
+    observe_grid() {
         if (typeof ResizeObserver === 'undefined') { return; }
         const grid = this.renderRoot?.querySelector('#grid');
         if (!grid) { return; }
