@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- `device_class` in the config was ignored. It now picks the default scale for an entity without a device class of its own, and the visual editor's "Treat as temperature" switch converts the scale to a °F sensor's unit instead of showing °C steps.
+
 ## [2026.11.12] - 2026-11-12
 
 Accessibility improvements (keyboard, screen reader and contrast).

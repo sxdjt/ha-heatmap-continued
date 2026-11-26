@@ -28,13 +28,13 @@ function metaFor(config, attributes) {
     return card.populate_meta(hassWith(attributes));
 }
 
-test('H1: config device_class picks the scale for an entity without one', { todo: true }, () => {
+test('H1: config device_class picks the scale for an entity without one', () => {
     const meta = metaFor({ device_class: 'temperature' }, { unit_of_measurement: '°C', state_class: 'measurement' });
     assert.equal(meta.device_class, 'temperature');
     assert.equal(meta.scale.key, 'outdoor temperature');
 });
 
-test('H1: the editor\'s temperature switch converts the scale to a °F sensor\'s unit', { todo: true }, () => {
+test('H1: the editor\'s temperature switch converts the scale to a °F sensor\'s unit', () => {
     // What render_device_class_picker() writes for an entity without a device_class.
     const meta = metaFor({ device_class: 'temperature', scale: 'outdoor temperature' },
         { unit_of_measurement: '°F', state_class: 'measurement' });

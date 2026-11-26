@@ -3929,6 +3929,8 @@ class HeatmapCard extends LitElement {
             // combination (difference or sum) of the two entities' values.
             'secondary_entity': config.secondary_entity,
             'operation': (config.operation ?? 'difference'),
+            // Fallback for an entity without a device_class of its own; see populate_meta().
+            'device_class': config.device_class,
             'treat_as': config.treat_as,
             'smoothing': (config.smoothing ?? false),
             'scale': config.scale,
