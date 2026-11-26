@@ -1837,7 +1837,10 @@ class HeatmapCard extends LitElement {
         var r = util;
         if (this.meta.scale.type === 'relative') {
             const diff = this.meta.data.max - this.meta.data.min;
-            r = (util - this.meta.data.min) / diff;
+            // A flat range (a sensor that held one value all window, or min = max in
+            // the config) would divide by zero, and chroma draws NaN as grey. Use the
+            // middle of the scale: the value is neither low nor high.
+            r = (diff === 0) ? 0.5 : (util - this.meta.data.min) / diff;
             if (r < 0) { r = 0 };
             if (r > 1) { r = 1 };
         }

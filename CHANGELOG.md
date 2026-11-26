@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - After saving an edit, the dashboard card kept its old title, scale and data until the next state change anywhere in Home Assistant. It now reloads straight away.
 - Paging quickly through history could leave an older page's data on screen, if its answer arrived after the newer page's.
 - After switching dashboard views and back, axis labels stopped thinning out when the card was resized.
+- With an auto-range scale, a sensor that held one value for the whole window (or `data.min` equal to `data.max`) drew every cell grey. Such cells now take the middle colour of the scale.
 
 ## [2026.11.12] - 2026-11-12
 
