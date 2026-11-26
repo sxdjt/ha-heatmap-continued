@@ -17,6 +17,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const CARD_PATH = path.join(__dirname, '..', '..', 'heatmap-card.js');
+// First line after the vendored chroma.js; everything from here on is the card's own code.
+const CARD_CODE_MARKER = '/* ------------------------------------------------------------------------- */\n/* LitElement via Home Assistant bundle';
 
 function loadCard() {
     const src = fs.readFileSync(CARD_PATH, 'utf8');
@@ -77,7 +79,23 @@ function loadCard() {
 
     const context = { console };
     vm.createContext(context);
-    vm.runInContext(preamble + '\n' + src + '\n' + epilogue, context, { filename: 'heatmap-card.js' });
+    /*
+        Separate scripts in one context: top-level declarations share the context's
+        global scope, so later scripts see earlier ones' classes and constants. The
+        card's own code runs under its absolute path at its real position (blanks stand
+        in for the vendored chroma.js above it), so coverage reports
+        `heatmap-card.js` and leaves the third-party minified library out.
+    */
+    const split = src.indexOf(CARD_CODE_MARKER);
+    if (split < 0) { throw new Error('load-card: chroma.js end marker not found'); }
+    const vendor = src.slice(0, split);
+    // Same length and line breaks as the vendor text: coverage maps character offsets
+    // back onto the file on disk, so the card's code must sit at its real offsets.
+    const vendor_blank = vendor.replace(/[^\n]/g, ' ');
+    vm.runInContext(preamble, context, { filename: 'load-card-preamble.js' });
+    vm.runInContext(vendor, context, { filename: 'vendor-chroma.js' });
+    vm.runInContext(vendor_blank + src.slice(split), context, { filename: CARD_PATH });
+    vm.runInContext(epilogue, context, { filename: 'load-card-epilogue.js' });
     return context.__card_exports;
 }
 

@@ -3,6 +3,7 @@
   "private": true,
   "description": "No build step required. Edit heatmap-card.js directly and deploy to Home Assistant.",
   "scripts": {
-    "test": "TZ=UTC node --test 'test/*.test.js'"
+    "test": "TZ=UTC test/run-capped.sh node --test 'test/*.test.js'",
+    "coverage": "TZ=UTC test/run-capped.sh node --test --experimental-test-coverage --test-coverage-include=heatmap-card.js 'test/*.test.js'"
   }
 }
