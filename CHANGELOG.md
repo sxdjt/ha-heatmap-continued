@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - After switching dashboard views and back, axis labels stopped thinning out when the card was resized.
 - With an auto-range scale, a sensor that held one value for the whole window (or `data.min` equal to `data.max`) drew every cell grey. Such cells now take the middle colour of the scale.
 - Visual editor: clearing the Minimum or Maximum box stored an invalid number and the preview showed a configuration error. A blank or non-numeric entry is now ignored, as it already was for step values.
+- Visual editor: a custom scale written in YAML without a `type` was shown as "Fixed thresholds" with value boxes, while the card draws it as auto-range. The editor now shows it as auto-range too.
 
 ## [2026.11.12] - 2026-11-12
 

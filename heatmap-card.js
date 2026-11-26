@@ -5034,7 +5034,8 @@ class HeatmapCardEditor extends LitElement {
     render_custom_scale_editor() {
         const scale = this._config.scale;
         const steps = scale.steps || [];
-        const is_absolute = scale.type !== 'relative';
+        // No type means relative, as in HeatmapScales.generate_scale().
+        const is_absolute = (scale.type === 'absolute');
         const unit = this._value_unit();
 
         // Range controls for auto-range (relative) custom scales
@@ -5052,7 +5053,7 @@ class HeatmapCardEditor extends LitElement {
                     {value: 'absolute', label: 'Fixed thresholds (value + color)'},
                     {value: 'relative', label: 'Auto-range (colors only, stretches to data)'}
                 ]}}}
-                .value=${scale.type || 'absolute'}
+                .value=${is_absolute ? 'absolute' : 'relative'}
                 @value-changed=${this._custom_type_changed}
             ></ha-selector>
             <div class="custom-steps">
@@ -5251,7 +5252,7 @@ class HeatmapCardEditor extends LitElement {
         const config = deep_clone(this._config);
         const steps = config.scale.steps || [];
         let new_step = {color: '#888888'};
-        if (config.scale.type !== 'relative') {
+        if (config.scale.type === 'absolute') {
             const values = steps.map((step) => step.value).filter((value) => Number.isFinite(value));
             const top = values.length ? Math.max(...values) : 0;
             const below = values.filter((value) => value < top);
@@ -5340,7 +5341,8 @@ class HeatmapCardEditor extends LitElement {
         ev.stopPropagation();
         const type = ev.detail?.value;
         if (!type) { return; }
-        if (type === this._config.scale?.type) { return; }
+        // An untyped scale is relative (see render_custom_scale_editor()).
+        if (type === (this._config.scale?.type ?? 'relative')) { return; }
         const config = deep_clone(this._config);
         config.scale.type = type;
         // Switching to relative: strip values from steps (colors only, evenly spaced)

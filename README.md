@@ -438,7 +438,8 @@ Every sensor gets the Scale dropdown, including ones without a device class.
 
 ### Via YAML
 
-Custom scales are defined as an object with a `type` and a list of `steps`.
+Custom scales are defined as an object with a `type` and a list of `steps`. Without a
+`type` the scale is `relative`.
 
 **Relative scale** (colors stretch across your data range):
 

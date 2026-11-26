@@ -9,6 +9,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadCard } = require('./helpers/load-card.js');
+const { markup } = require('./helpers/fixtures.js');
 
 const { HeatmapCard, HeatmapCardEditor, HeatmapScales, bucket_values, vm_global } = loadCard();
 
@@ -327,4 +328,15 @@ test('H10: a cleared or non-numeric range box is ignored, not stored as NaN', ()
     assert.equal(editor.dispatched.length, 0);
     changes[0]({ stopPropagation() {}, target: { value: '-2.5' } });
     assert.equal(editor.dispatched[0].data.min, -2.5);
+});
+
+test('H11: the editor shows a custom scale without a type as auto-range, as the card draws it', () => {
+    const steps = [{ value: 0, color: '#000000' }, { value: 1, color: '#ffffff' }];
+    assert.equal(new HeatmapScales().get_scale({ steps }).type, 'relative', 'the card default');
+    const editor = titleEditor({ scale: { steps } });
+    editor._value_unit = () => undefined;
+    editor._range_hint = () => undefined;
+    const template = editor.render_custom_scale_editor();
+    assert.equal(template.values[4], 'relative', 'Scale type selector value');
+    assert.doesNotMatch(markup(template), /Value for step/);
 });
