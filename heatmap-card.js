@@ -1252,8 +1252,9 @@ function history_to_statistics(states, start_ms, end_ms, period) {
         let last = null;
         for (let i = first; i < segments.length && segments[i].from < to; i++) {
             const segment = segments[i];
+            // Always positive: segments are ordered and disjoint, the while above skips
+            // those ending by `from`, and the loop stops at the first starting at `to`.
             const overlap = Math.min(segment.to, to) - Math.max(segment.from, from);
-            if (overlap <= 0) { continue; }
             weighted += segment.value * overlap;
             covered += overlap;
             min = Math.min(min, segment.value);
@@ -1473,10 +1474,11 @@ function month_shortening_is_safe(language) {
     const formatter = new Intl.DateTimeFormat(language, { month: 'short', day: '2-digit' });
     const shortened = new Set();
     for (let month = 0; month < 12; month++) {
-        // Day 1 of a fixed year; only the month part is read.
+        // Day 1 of a fixed year; only the month part is read (a month-only format
+        // always has one).
         const part = formatter.formatToParts(new Date(2024, month, 1))
             .find((candidate) => candidate.type === 'month');
-        shortened.add(part === undefined ? String(month) : shorten_month(part.value));
+        shortened.add(shorten_month(part.value));
     }
     const safe = (shortened.size === 12);
     month_shortening_cache.set(key, safe);
@@ -3555,7 +3557,8 @@ class HeatmapCard extends LitElement {
 
             // Slot index 0 = Monday, 6 = Sunday
             const slotIndex = daysFromMonday;
-            weekSlots[slotIndex] = entry.value ?? null;
+            // Both callers give every entry a value (null when the aggregate is missing).
+            weekSlots[slotIndex] = entry.value;
         }
 
         return grid.reverse();

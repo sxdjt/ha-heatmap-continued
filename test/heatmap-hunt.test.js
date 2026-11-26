@@ -303,3 +303,13 @@ test('E1: the card hides the header for title: null and uses the friendly name w
     assert.equal(hass(undefined), 'Friendly');
     assert.equal(hass('Mine'), 'Mine');
 });
+
+test('H9: a relative scale over a flat range colours cells from the scale, not grey', { todo: true }, () => {
+    const scale = new HeatmapScales().get_scale('stoplight');
+    const card = Object.create(HeatmapCard.prototype);
+    card.config = { display: {} };
+    card.meta = { scale, data: { min: 5, max: 5 } };
+    card.grid = [{ vals: [5] }];
+    const color = card.render_cell(5, 0, 0).values.at(-2);
+    assert.equal(String(color), String(scale.gradient(0.5)), 'the middle of the scale');
+});
