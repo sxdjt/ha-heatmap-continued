@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Wind direction sensors (`state_class: measurement_angle`) showed "Unknown state_class" in hourly and minute mode, and the visual editor warned that they keep no statistics. They now render like measurements, and `time_interval` / `minute_interval` average them around the circle (350° and 10° give 0°, not 180°).
 - An entity that does not exist yet (Home Assistant still starting, renamed, or a typo) left the card blank with errors in the browser console. The card now says "Entity not available" and loads by itself once the entity appears.
 - After saving an edit, the dashboard card kept its old title, scale and data until the next state change anywhere in Home Assistant. It now reloads straight away.
+- Paging quickly through history could leave an older page's data on screen, if its answer arrived after the newer page's.
 
 ## [2026.11.12] - 2026-11-12
 

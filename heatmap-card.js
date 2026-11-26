@@ -2941,6 +2941,13 @@ class HeatmapCard extends LitElement {
     */
     fetch_history() {
         /*
+            Every fetch gets a number, and only the newest may write the grid. Paging,
+            the refresh timer and a saved edit can each start a fetch while another is
+            still out; without this an older answer landing last replaced the newer one
+            (and a status set below could be overwritten the same way).
+        */
+        this.fetch_seq = (this.fetch_seq ?? 0) + 1;
+        /*
             An entity missing from hass (still loading at startup, renamed, or a typo)
             has no attributes to build meta from. Say so, and leave last_render_ts alone
             so the next hass update tries again: the card recovers on its own once the
@@ -3117,6 +3124,9 @@ class HeatmapCard extends LitElement {
         shouldn't send it. It'll bring more pain than benefit.
     */
     get_recorder(consumers, days) {
+        // Answers to an older fetch are dropped; see fetch_history().
+        const seq = this.fetch_seq;
+        const current = () => (this.fetch_seq === seq);
         // The window ends at `now` unless the user has paged back into history.
         const end = this.view_end();
         this.grid_status = undefined;
@@ -3168,6 +3178,7 @@ class HeatmapCard extends LitElement {
             // usual sum/mean rather than branch the request per consumer.
             "types":["sum", "mean", "state"]
         }).then(recorderResponse => {
+            if (!current()) { return; }
             // Build one grid per requested entity, then combine them. For the common
             // single-entity case there is exactly one grid and no combination happens.
             const grids = [];
@@ -3228,7 +3239,7 @@ class HeatmapCard extends LitElement {
             // Diverging (signed) results read best when zero sits at the centre of the
             // scale. When differencing with auto range, widen to a symmetric [-M, M].
             this.apply_symmetric_range();
-        }).catch(error => this.report_fetch_error(error));
+        }).catch(error => { if (current()) { this.report_fetch_error(error); } });
     }
 
     /*
@@ -3390,6 +3401,9 @@ class HeatmapCard extends LitElement {
         in calculate_daily_last_values().
     */
     get_recorder_daily(consumers, weeks) {
+        // Answers to an older fetch are dropped; see fetch_history().
+        const seq = this.fetch_seq;
+        const current = () => (this.fetch_seq === seq);
         // The window ends at `now` unless the user has paged back into history.
         const end = this.view_end();
         this.grid_status = undefined;
@@ -3417,6 +3431,7 @@ class HeatmapCard extends LitElement {
             'end_time': end.toISOString(),
             'types': use_last ? ['mean'] : ['mean', 'min', 'max']
         }).then(recorderResponse => {
+            if (!current()) { return; }
             for (const consumer of consumers) {
                 const consumerData = recorderResponse[consumer];
                 if (consumerData === undefined) {
@@ -3429,7 +3444,7 @@ class HeatmapCard extends LitElement {
                     : this.calculate_daily_values(consumerData);
             }
             this.apply_auto_range();
-        }).catch(error => this.report_fetch_error(error));
+        }).catch(error => { if (current()) { this.report_fetch_error(error); } });
     }
 
     /*

@@ -168,7 +168,7 @@ test('H5: setConfig on a card without hass does not fetch', () => {
     assert.equal(card.meta, undefined);
 });
 
-test('H6: an older fetch that resolves last does not overwrite the newer grid', { todo: true }, async () => {
+test('H6: an older fetch that resolves last does not overwrite the newer grid', async () => {
     const { card, hass } = liveCard({ days: 1 });
     card.navigate('back');
     assert.equal(hass.requests.length, 2);
@@ -179,6 +179,31 @@ test('H6: an older fetch that resolves last does not overwrite the newer grid', 
     await settle();
     assert.ok(values(card).length > 0);
     assert.ok(values(card).every((v) => v === 2), `grid shows ${[...new Set(values(card))]}`);
+});
+
+test('H6: stale daily answers and stale errors are dropped too', async () => {
+    const { card, hass } = liveCard({ mode: 'daily', weeks: 1 });
+    card.navigate('back');
+    card.navigate('current');
+    assert.equal(hass.requests.length, 3);
+    const day = { start: Date.now() - 86400000, mean: 7, min: 7, max: 7 };
+    hass.requests[2].resolve({ 'sensor.a': [day] });
+    await settle();
+    hass.requests[0].resolve({ 'sensor.a': [{ ...day, mean: 1, min: 1, max: 1 }] });
+    hass.requests[1].resolve(Promise.reject(new Error('late failure')));
+    await settle();
+    assert.equal(card.grid_status, undefined);
+    assert.ok(values(card).length > 0);
+    assert.ok(values(card).every((v) => v === 7));
+});
+
+test('H6: a conflict status is not overwritten by an earlier fetch', async () => {
+    const { card, hass } = liveCard({ secondary_entity: 'sensor.b' });
+    hass.states['sensor.b'] = { state: '1', attributes: { state_class: 'total_increasing' } };
+    card.setConfig({ entity: 'sensor.a', secondary_entity: 'sensor.b', title: 'x' });
+    hass.requests[0].resolve({ 'sensor.a': hourlyRows(1) });
+    await settle();
+    assert.match(card.grid_status, /Cannot combine/);
 });
 
 test('H7: the grid is measured again after HA reconnects the card', { todo: true }, () => {
