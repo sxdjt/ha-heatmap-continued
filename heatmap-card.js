@@ -891,12 +891,14 @@ const SCALE_ALIASES = {
                       Only present for device classes where HA performs unit conversion.
 
     Deliberately not exhaustive - this is not a mirror of HA's device_class enum. Every
-    device_class is still valid in YAML (setConfig does not check membership here); this
-    map only exists to drive unit conversion, which today only temperature needs. Any other
-    class falls through to the global default scale, same as if this map were empty for it.
-    The editor's device_class picker offers only these keys as a result.
+    device_class is still valid in YAML (setConfig does not check membership here). Only
+    classes with a purpose-built scale or a unit conversion are listed; any other class
+    falls through to the global default scale. carbon_dioxide and pm25 were dropped by
+    mistake in 2026.10.9 (the change was meant to touch the editor only) and are back.
 */
 const DEVICE_CLASSES = {
+    "carbon_dioxide": {"default": "carbon dioxide"},
+    "pm25": {"default": "pm25"},
     "temperature": {"default": "outdoor temperature", "unit_system": "temperature"}
 };
 
@@ -4478,7 +4480,7 @@ class HeatmapCardEditor extends LitElement {
 
     /*
         Only shown when the entity does not expose a device_class attribute of its own.
-        DEVICE_CLASSES carries metadata for temperature only (F/C unit conversion), so this
+        Only temperature changes how the card reads a sensor (F/C unit conversion), so this
         is a plain on/off toggle rather than a picker over the whole HA device_class enum.
         Bypasses the delegated value-changed listener in createRenderRoot() (that listener
         expects ev.detail.value, which ha-switch's plain 'change' event does not provide),

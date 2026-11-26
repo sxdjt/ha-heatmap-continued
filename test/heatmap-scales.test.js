@@ -18,15 +18,16 @@ test('constructor indexes every builtin scale by key and sets the default', () =
 test('defaults_for returns the device-class default when defined', () => {
     const scales = new HeatmapScales();
     assert.equal(scales.defaults_for('temperature'), 'outdoor temperature');
+    assert.equal(scales.defaults_for('pm25'), 'pm25');
+    assert.equal(scales.defaults_for('carbon_dioxide'), 'carbon dioxide');
 });
 
 test('defaults_for falls back to the global default for classes without one', () => {
     const scales = new HeatmapScales();
-    // DEVICE_CLASSES only carries metadata for temperature; every other device
-    // class - known to HA or not - falls back to the global default.
+    // Device classes without a purpose-built scale - known to HA or not - fall back
+    // to the global default.
     assert.equal(scales.defaults_for('battery'), 'stoplight');
-    assert.equal(scales.defaults_for('pm25'), 'stoplight');
-    assert.equal(scales.defaults_for('carbon_dioxide'), 'stoplight');
+    assert.equal(scales.defaults_for('pm10'), 'stoplight');
     assert.equal(scales.defaults_for('not_a_real_class'), 'stoplight');
     assert.equal(scales.defaults_for(''), 'stoplight');
 });

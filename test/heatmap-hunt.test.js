@@ -47,7 +47,7 @@ test('H1: the entity\'s own device_class still wins over the config', () => {
     assert.equal(meta.scale.key, 'stoplight');
 });
 
-test('H2: carbon_dioxide and pm25 sensors select their scales again', { todo: true }, () => {
+test('H2: carbon_dioxide and pm25 sensors select their scales again', () => {
     assert.equal(metaFor({}, { device_class: 'carbon_dioxide' }).scale.key, 'carbon dioxide');
     assert.equal(metaFor({}, { device_class: 'pm25' }).scale.key, 'pm25');
 });

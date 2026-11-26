@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - `device_class` in the config was ignored. It now picks the default scale for an entity without a device class of its own, and the visual editor's "Treat as temperature" switch converts the scale to a °F sensor's unit instead of showing °C steps.
+- CO2 (`carbon_dioxide`) and PM2.5 (`pm25`) sensors pick the `carbon dioxide` and `pm25` scales again; since 2026.10.9 they got `stoplight`.
 
 ## [2026.11.12] - 2026-11-12
 

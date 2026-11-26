@@ -365,11 +365,11 @@ Scales are selected automatically based on `device_class`, but can be set explic
 Absolute scales map colors to specific values, regardless of the data range. Temperature
 scales convert their steps to the sensor's own unit (°C or °F); other units are fixed.
 The last column shows the device class that selects the scale automatically; the others
-have to be named with `scale`.
+have to be named with `scale`. Any other device class gets `stoplight`.
 
 | Scale Name | Units | Auto-selected for |
 |------------|-------|--------------|
-| `carbon dioxide` | ppm | - |
+| `carbon dioxide` | ppm | carbon_dioxide |
 | `indoor temperature f` | °F | - |
 | `indoor temperature` | °C | - |
 | `nitrogen dioxide eaqi` | µg/m³ | - |
@@ -378,7 +378,7 @@ have to be named with `scale`.
 | `ozone eaqi` | µg/m³ | - |
 | `pm10 eaqi` | µg/m³ | - |
 | `pm25 eaqi` | µg/m³ | - |
-| `pm25` | µg/m³ | - |
+| `pm25` | µg/m³ | pm25 |
 | `sulphur dioxide eaqi` | µg/m³ | - |
 
 ### Relative Scales
