@@ -4600,6 +4600,45 @@ class HeatmapCardEditor extends LitElement {
         to tell the two apart, so this is a manual opt-in; see get_recorder() for the
         `treat_as` config key this writes.
     */
+    /*
+        "Show title" switch and the title box. Off stores `title: null`, the YAML way to
+        hide the header (populate_meta() keeps null instead of falling back to the
+        friendly name); on removes the key, so the friendly name is back until a title
+        is typed. The box is hidden while the header is off: a title typed there would
+        not show.
+    */
+    render_title_fields() {
+        const shown = (this._config.title !== null);
+        return html`
+            <div class="toggle-row">
+                <label>Show title</label>
+                <ha-switch
+                    aria-label="Show title"
+                    .checked=${shown}
+                    @change=${(e) => {
+                        const config = deep_clone(this._config);
+                        if (e.target.checked) {
+                            delete config.title;
+                        } else {
+                            config.title = null;
+                        }
+                        this._dispatch_config(config);
+                    }}
+                >${this._control_name('Show title')}</ha-switch>
+            </div>
+            ${shown ? html`
+                <ha-selector
+                    .hass=${this.myhass}
+                    .required=${false}
+                    .label=${"Card title"}
+                    .value=${this._config.title || ""}
+                    .selector=${{text: {}}}
+                    .configValue=${"title"}
+                ></ha-selector>
+            ` : ''}
+        `;
+    }
+
     render_treat_as_toggle() {
         if (this.entity?.attributes?.state_class !== 'total') { return ''; }
         return html`
@@ -5460,14 +5499,7 @@ class HeatmapCardEditor extends LitElement {
             ></ha-entity-picker>
             ${this.render_entity_warning()}
             ${this.render_device_class_picker()}
-            <ha-selector
-                .hass=${this.myhass}
-                .required=${false}
-                .label=${"Card title"}
-                .value=${this._config.title || ""}
-                .selector=${{text: {}}}
-                .configValue=${"title"}
-            ></ha-selector>
+            ${this.render_title_fields()}
 
             <ha-expansion-panel header="Data" .expanded=${true}>
                 <div class="section">

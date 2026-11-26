@@ -320,7 +320,7 @@ Hide the controls with `display.navigation: false`.
 | `entity` | string | **required** | Entity ID to display |
 | `secondary_entity` | string | - | Optional second entity to combine per cell (hourly and minute mode) |
 | `operation` | string | `difference` | How to combine the two entities: `difference` (`entity` - `secondary_entity`) or `sum` |
-| `title` | string | Entity friendly name | Card title; `title: null` hides the header |
+| `title` | string | Entity friendly name | Card title; `title: null` hides the header (the editor's Show title switch) |
 | `mode` | string | `hourly` | Heatmap granularity: `hourly`, `daily`, or `minute` (rows are hours, see [Minute Mode](#minute-mode-example)) |
 | `orientation` | string | `vertical` | Grid layout: `vertical` (dates down the side) or `horizontal` (dates across, carpet plot) |
 | `time_interval` | number | `1` | Hours per cell on the time axis: `1`, `2`, `3`, `4`, `6`, `8`, `12` or `24` (hourly mode only) |

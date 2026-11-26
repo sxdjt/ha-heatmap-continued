@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Visual editor: a "Show title" switch. Off hides the card header (stored as `title: null`, which already worked in YAML); the title box is hidden while it is off.
+
 ### Fixed
 - `device_class` in the config was ignored. It now picks the default scale for an entity without a device class of its own, and the visual editor's "Treat as temperature" switch converts the scale to a °F sensor's unit instead of showing °C steps.
 - CO2 (`carbon_dioxide`) and PM2.5 (`pm25`) sensors pick the `carbon dioxide` and `pm25` scales again; since 2026.10.9 they got `stoplight`.

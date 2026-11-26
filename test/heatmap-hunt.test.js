@@ -251,3 +251,55 @@ test('H8: the card recovers when the missing entity appears', () => {
     assert.equal(hass.requests.length, 1, 'fetched on the next hass update');
     assert.equal(card.meta.title, 'Mine');
 });
+
+/* --- E1: "Show title" switch (decision a: it writes title: null) ---------- */
+
+function titleEditor(config) {
+    const editor = Object.create(HeatmapCardEditor.prototype);
+    editor.scales = new HeatmapScales();
+    editor._config = { entity: 'sensor.a', ...config };
+    editor.dispatched = [];
+    editor._dispatch_config = (c) => editor.dispatched.push(c);
+    return editor;
+}
+
+// Template values: [checked, onChange, slotted name, title box].
+function titleSwitch(editor) {
+    const [checked, change, , box] = editor.render_title_fields().values;
+    return { checked, change, box };
+}
+
+test('E1: the Show title switch is on unless the title is null', () => {
+    assert.equal(titleSwitch(titleEditor({})).checked, true);
+    assert.equal(titleSwitch(titleEditor({ title: 'Mine' })).checked, true);
+    assert.equal(titleSwitch(titleEditor({ title: null })).checked, false);
+});
+
+test('E1: turning the switch off stores title: null, on removes the key', () => {
+    const off = titleEditor({ title: 'Mine' });
+    titleSwitch(off).change({ target: { checked: false } });
+    assert.equal(off.dispatched[0].title, null);
+
+    const on = titleEditor({ title: null });
+    titleSwitch(on).change({ target: { checked: true } });
+    assert.equal('title' in on.dispatched[0], false);
+});
+
+test('E1: the title box is hidden while the header is off', () => {
+    assert.equal(titleSwitch(titleEditor({ title: null })).box, '');
+    const box = titleSwitch(titleEditor({ title: 'Mine' })).box;
+    assert.match(box.strings.join(''), /<ha-selector/);
+    assert.ok(box.values.includes('Mine'));
+});
+
+test('E1: the card hides the header for title: null and uses the friendly name when unset', () => {
+    const hass = (title) => {
+        const card = Object.create(HeatmapCard.prototype);
+        card.scales = new HeatmapScales();
+        card.setConfig({ entity: 'sensor.a', ...(title === undefined ? {} : { title }) });
+        return card.populate_meta(hassWith({ friendly_name: 'Friendly', state_class: 'measurement' })).title;
+    };
+    assert.equal(hass(null), undefined);
+    assert.equal(hass(undefined), 'Friendly');
+    assert.equal(hass('Mine'), 'Mine');
+});
