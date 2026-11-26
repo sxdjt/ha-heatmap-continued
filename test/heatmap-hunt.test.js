@@ -154,12 +154,18 @@ test('H4: the editor does not warn that a measurement_angle sensor has no statis
     assert.equal(editor.render_entity_warning(), undefined);
 });
 
-test('H5: a second setConfig on a live card refetches with the hass it has', { todo: true }, () => {
+test('H5: a second setConfig on a live card refetches with the hass it has', () => {
     const { card, hass } = liveCard({ title: 'One' });
     assert.equal(hass.requests.length, 1);
     card.setConfig({ entity: 'sensor.a', title: 'Two' });
     assert.equal(card.meta.title, 'Two');
     assert.equal(hass.requests.length, 2);
+});
+
+test('H5: setConfig on a card without hass does not fetch', () => {
+    const card = new HeatmapCard();
+    assert.doesNotThrow(() => card.setConfig({ entity: 'sensor.a' }));
+    assert.equal(card.meta, undefined);
 });
 
 test('H6: an older fetch that resolves last does not overwrite the newer grid', { todo: true }, async () => {

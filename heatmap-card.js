@@ -4009,6 +4009,13 @@ class HeatmapCard extends LitElement {
             the user on an arbitrary window after an edit.
         */
         this.view_offset = 0;
+        /*
+            HA calls setConfig again on the live dashboard card when an edit is saved
+            (hui-card's _updateElement), without setting hass. Refetch with the hass
+            already in hand, or the old title, scale and grid stay up until the next
+            hass update. A new card has no hass yet; set hass fetches for it.
+        */
+        if (this.myhass !== undefined) { this.fetch_history(); }
     }
   
     /*
