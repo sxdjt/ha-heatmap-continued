@@ -5706,37 +5706,6 @@ class HeatmapCardEditor extends LitElement {
     }
 
     /*
-        Translate a DOM input/change event from a native input or ha-checkbox into a
-        'value-changed' event that the root listener in createRenderRoot() can handle.
-
-        - For checkboxes, emits the element's value when checked, or 0 when unchecked.
-        - For numeric strings, parses and emits as a float.
-        - For all other strings, emits verbatim.
-
-        The element must have a .configValue property set to the config key (dot notation
-        is supported, e.g. "data.min"). Stops propagation of the original event before
-        re-dispatching to avoid double-processing.
-    */
-        update_field(ev) {
-            ev.stopPropagation();
-            const value = ev.target.value;
-            if (this.disabled || value === undefined || value === this.value) {
-                return;
-            }
-            const event = new Event('value-changed', { bubbles: true });
-            if ('checked' in ev.target) {
-                // Is this a checkbox?
-                event.detail = {'value': (ev.target.checked === true ? value : 0)};
-            } else if (isNaN(parseFloat(value))) {
-                // Can't parse as a number? Use verbatim
-                event.detail = {'value': value};
-            } else {
-                event.detail = {'value': parseFloat(value)};
-            }
-            ev.target.dispatchEvent(event);
-        }
-
-    /*
         Override createRenderRoot() to attach a single delegated 'value-changed' listener on the
         shadow root. This handles all config field updates in one place without needing per-element
         handlers, as long as each element has a .configValue property set to its config key.
