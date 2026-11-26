@@ -197,7 +197,7 @@ test('H7: the grid is measured again after HA reconnects the card', { todo: true
     }
 });
 
-test('H8: a missing entity shows a status instead of throwing', { todo: true }, () => {
+test('H8: a missing entity shows a status instead of throwing', () => {
     const hass = fakeHass({});
     const card = new HeatmapCard();
     card.setConfig({ entity: 'sensor.gone' });
@@ -205,4 +205,18 @@ test('H8: a missing entity shows a status instead of throwing', { todo: true }, 
     assert.doesNotThrow(() => card.render());
     assert.match(String(card.grid_status), /sensor\.gone/);
     assert.equal(hass.requests.length, 0);
+});
+
+test('H8: the card recovers when the missing entity appears', () => {
+    const hass = fakeHass({});
+    const card = new HeatmapCard();
+    card.setConfig({ entity: 'sensor.a', title: 'Mine' });
+    card.hass = hass;
+    const status = card.render().strings.join('');
+    assert.match(status, /<ha-card header="/);
+    assert.equal(card.render().values[0], 'Mine', 'the configured title is kept while waiting');
+    hass.states['sensor.a'] = { state: '1', attributes: { state_class: 'measurement' } };
+    card.hass = { ...hass };
+    assert.equal(hass.requests.length, 1, 'fetched on the next hass update');
+    assert.equal(card.meta.title, 'Mine');
 });

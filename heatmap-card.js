@@ -1773,6 +1773,15 @@ class HeatmapCard extends LitElement {
     render() {
         // We may be trying to render before we've received the recorder data.
         if (this.grid === undefined) { this.grid = []; }
+        // No meta until the entity has been seen in hass (see fetch_history()): there is
+        // no scale or title to draw the grid with yet, only the status.
+        if (this.meta === undefined) {
+            return html`
+                <ha-card header="${this.config?.title}" id="card">
+                    <div class="card-content">${this.render_status()}</div>
+                </ha-card>
+            `;
+        }
         // Evaluate once per render - render_cell is called thousands of times.
         this._labels_legible = this.labels_are_legible(this.widest_label_length());
         const is_horizontal = (this.config?.orientation === 'horizontal');
@@ -2931,6 +2940,17 @@ class HeatmapCard extends LitElement {
         waiting on the result of a click rather than a background tick.
     */
     fetch_history() {
+        /*
+            An entity missing from hass (still loading at startup, renamed, or a typo)
+            has no attributes to build meta from. Say so, and leave last_render_ts alone
+            so the next hass update tries again: the card recovers on its own once the
+            entity appears.
+        */
+        if (this.myhass.states[this.config.entity] === undefined) {
+            this.grid = [];
+            this.grid_status = `Entity not available: ${this.config.entity}`;
+            return;
+        }
         this.meta = this.populate_meta(this.myhass);
         var consumers = [this.config.entity];
         // When a secondary entity is configured, fetch both in the same statistics
