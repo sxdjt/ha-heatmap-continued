@@ -10,7 +10,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadCard } = require('./helpers/load-card.js');
 
-const { HeatmapCard, HeatmapScales } = loadCard();
+const { HeatmapCard, HeatmapCardEditor, HeatmapScales, vm_global } = loadCard();
 
 function hassWith(attributes) {
     return {
@@ -34,6 +34,13 @@ test('H1: config device_class picks the scale for an entity without one', { todo
     assert.equal(meta.scale.key, 'outdoor temperature');
 });
 
+test('H1: the editor\'s temperature switch converts the scale to a °F sensor\'s unit', { todo: true }, () => {
+    // What render_device_class_picker() writes for an entity without a device_class.
+    const meta = metaFor({ device_class: 'temperature', scale: 'outdoor temperature' },
+        { unit_of_measurement: '°F', state_class: 'measurement' });
+    assert.equal(meta.scale.unit, '°F');
+});
+
 test('H1: the entity\'s own device_class still wins over the config', () => {
     const meta = metaFor({ device_class: 'temperature' }, { device_class: 'humidity', state_class: 'measurement' });
     assert.equal(meta.device_class, 'humidity');
@@ -48,4 +55,120 @@ test('H2: carbon_dioxide and pm25 sensors select their scales again', { todo: tr
 test('H3: every built-in scale has a name matching its key', { todo: true }, () => {
     const scales = new HeatmapScales();
     assert.equal(scales.scale_by_key['colorbrewer 5cl rdpu'].name, 'ColorBrewer 5-class RdPu');
+});
+
+/* --- Card lifecycle and fetches, in HA's order: setConfig, hass, connect ---- */
+
+const HOUR = 3600000;
+
+// A hass whose callWS answers are released by the test, in any order.
+function fakeHass(states) {
+    const requests = [];
+    return {
+        requests,
+        config: { unit_system: { temperature: '°C' } },
+        language: 'en',
+        locale: { time_format: '24' },
+        localize: () => 'No data',
+        states,
+        callWS(request) {
+            return new Promise((resolve) => { requests.push({ request, resolve }); });
+        }
+    };
+}
+
+// One statistics row per hour for the last `hours` hours, all with the same mean.
+function hourlyRows(mean, hours = 3) {
+    const now = Math.floor(Date.now() / HOUR) * HOUR;
+    return Array.from({ length: hours }, (_, i) => ({ start: now - (hours - i) * HOUR, mean }));
+}
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+const values = (card) => card.grid.flatMap((row) => Array.from(row.vals)).filter((v) => v !== null);
+
+function liveCard(config, attributes = { state_class: 'measurement', friendly_name: 'A' }) {
+    const hass = fakeHass({ 'sensor.a': { state: '1', attributes } });
+    const card = new HeatmapCard();
+    card.setConfig({ entity: 'sensor.a', ...config });
+    card.hass = hass;
+    return { card, hass };
+}
+
+test('H4: a measurement_angle sensor (wind direction) renders as a measurement', { todo: true }, async () => {
+    const { card, hass } = liveCard({}, { state_class: 'measurement_angle', unit_of_measurement: '°' });
+    hass.requests[0].resolve({ 'sensor.a': hourlyRows(270) });
+    await settle();
+    assert.equal(card.grid_status, undefined);
+    assert.ok(values(card).length > 0);
+    assert.ok(values(card).every((v) => v === 270));
+});
+
+test('H4: time_interval averages angles around the circle', { todo: true }, () => {
+    const card = Object.create(HeatmapCard.prototype);
+    card.config = { mode: 'hourly', time_interval: 2 };
+    card.meta = { state_class: 'measurement_angle' };
+    const [entry] = card.bucket_grid([{ vals: [350, 10] }]);
+    const v = entry.vals[0];
+    assert.ok(Math.min(Math.abs(v), Math.abs(360 - v)) < 1e-9, `350 and 10 average to 0, got ${v}`);
+});
+
+test('H4: the editor does not warn that a measurement_angle sensor has no statistics', { todo: true }, () => {
+    const editor = Object.create(HeatmapCardEditor.prototype);
+    editor.scales = new HeatmapScales();
+    editor._config = { entity: 'sensor.a' };
+    editor.entity = { attributes: { state_class: 'measurement_angle' } };
+    assert.equal(editor.render_entity_warning(), undefined);
+});
+
+test('H5: a second setConfig on a live card refetches with the hass it has', { todo: true }, () => {
+    const { card, hass } = liveCard({ title: 'One' });
+    assert.equal(hass.requests.length, 1);
+    card.setConfig({ entity: 'sensor.a', title: 'Two' });
+    assert.equal(card.meta.title, 'Two');
+    assert.equal(hass.requests.length, 2);
+});
+
+test('H6: an older fetch that resolves last does not overwrite the newer grid', { todo: true }, async () => {
+    const { card, hass } = liveCard({ days: 1 });
+    card.navigate('back');
+    assert.equal(hass.requests.length, 2);
+    // The newer (paged back) answer lands first, then the stale present-day one.
+    hass.requests[1].resolve({ 'sensor.a': hourlyRows(2) });
+    await settle();
+    hass.requests[0].resolve({ 'sensor.a': hourlyRows(1) });
+    await settle();
+    assert.ok(values(card).length > 0);
+    assert.ok(values(card).every((v) => v === 2), `grid shows ${[...new Set(values(card))]}`);
+});
+
+test('H7: the grid is measured again after HA reconnects the card', { todo: true }, () => {
+    const observed = [];
+    vm_global.ResizeObserver = class {
+        observe(el) { observed.push(el); }
+        disconnect() {}
+    };
+    try {
+        const { card } = liveCard({});
+        const grid = {};
+        Object.defineProperty(card, 'renderRoot', { value: { querySelector: () => grid } });
+        card.connectedCallback();
+        card.firstUpdated();
+        card.hasUpdated = true;
+        card.disconnectedCallback();
+        card.connectedCallback();
+        assert.equal(observed.length, 2, 'observing again after the reconnect');
+        assert.ok(card._grid_observer, 'an observer is attached');
+    } finally {
+        delete vm_global.ResizeObserver;
+    }
+});
+
+test('H8: a missing entity shows a status instead of throwing', { todo: true }, () => {
+    const hass = fakeHass({});
+    const card = new HeatmapCard();
+    card.setConfig({ entity: 'sensor.gone' });
+    assert.doesNotThrow(() => { card.hass = hass; });
+    assert.doesNotThrow(() => card.render());
+    assert.match(String(card.grid_status), /sensor\.gone/);
+    assert.equal(hass.requests.length, 0);
 });

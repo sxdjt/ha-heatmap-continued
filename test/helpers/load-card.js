@@ -34,6 +34,8 @@ function loadCard() {
         class BaseLitElement {}
         BaseLitElement.prototype.html = __tag;
         BaseLitElement.prototype.css = __tag;
+        BaseLitElement.prototype.connectedCallback = function () {};
+        BaseLitElement.prototype.disconnectedCallback = function () {};
         const __registry = {};
         globalThis.customElements = {
             define(name, cls) { __registry[name] = cls; },
@@ -42,7 +44,11 @@ function loadCard() {
                 return __registry[name];
             }
         };
-        globalThis.document = { createElement() { return {}; } };
+        globalThis.document = {
+            createElement() { return {}; },
+            addEventListener() {},
+            removeEventListener() {}
+        };
     `;
 
     const epilogue = `
@@ -73,7 +79,9 @@ function loadCard() {
             DEVICE_CLASSES,
             entity_unit_system,
             conversions,
-            chroma
+            chroma,
+            // The VM's global object, for tests that stub a browser API (ResizeObserver).
+            vm_global: globalThis
         };
     `;
 
