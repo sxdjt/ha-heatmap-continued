@@ -86,7 +86,7 @@ title: Net Grid Energy
 scale: net energy
 ```
 
-The `net energy` scale is diverging (blue for export, white near zero, red for import) and, with auto range, centers zero by widening the range symmetrically. Use `operation: sum` instead to add two entities (for example two circuits' consumption). Multi-entity combination is only available in hourly mode.
+The `net energy` scale is diverging (blue for export, white near zero, red for import) and, with auto range, centers zero by widening the range symmetrically. Use `operation: sum` instead to add two entities (for example two circuits' consumption). Multi-entity combination is available in hourly and minute mode, not daily mode.
 
 ### Fluctuating "total" sensors (e.g. a live count)
 
@@ -319,7 +319,7 @@ Hide the controls with `display.navigation: false`.
 | `entity` | string | **required** | Entity ID to display |
 | `secondary_entity` | string | - | Optional second entity to combine per cell (hourly and minute mode) |
 | `operation` | string | `difference` | How to combine the two entities: `difference` (`entity` - `secondary_entity`) or `sum` |
-| `title` | string | Entity friendly name | Card title |
+| `title` | string | Entity friendly name | Card title; `title: null` hides the header |
 | `mode` | string | `hourly` | Heatmap granularity: `hourly`, `daily`, or `minute` (rows are hours, see [Minute Mode](#minute-mode-example)) |
 | `orientation` | string | `vertical` | Grid layout: `vertical` (dates down the side) or `horizontal` (dates across, carpet plot) |
 | `time_interval` | number | `1` | Hours per cell on the time axis: `1`, `2`, `3`, `4`, `6`, `8`, `12` or `24` (hourly mode only) |
@@ -327,11 +327,11 @@ Hide the controls with `display.navigation: false`.
 | `minute_rows` | string | `hour` | Minute mode rows: `hour` (one row per clock hour) or `day` (one row per day, see [One row per day](#one-row-per-day)) |
 | `data` | object | - | Data range configuration (see below) |
 | `days` | number | `21` (`1` in minute mode, `7` with `minute_rows: day`) | Days of history to show (hourly mode: 1-365; minute mode: 1-31, or 1-365 with `minute_rows: day`) |
-| `weeks` | number | `12` | Weeks of history to show (daily mode) |
+| `weeks` | number | `12` | Weeks of history to show (daily mode, 1-52) |
 | `aggregate` | string | `mean` | Daily aggregate statistic: `mean`, `min`, `max`, or `last` (daily mode). `last` = final hour's value of each day |
 | `smoothing` | boolean | `false` | Spread each step of a low-precision `total`/`total_increasing` sensor over the flat stretch before it (hourly and minute mode) - see [Low-precision energy sensors](#low-precision-energy-sensors-smoothing) |
 | `treat_as` | string | - | Set to `measurement` for a `state_class: total` entity that fluctuates (e.g. a live count) rather than accumulates (e.g. an energy meter) - see below |
-| `device_class` | string | From entity | Override device class for scale auto-selection |
+| `device_class` | string | From entity | Device class to pick the default scale with when the entity has none of its own (the entity's own device class wins) |
 | `display` | object | - | Display options (see below) |
 | `scale` | string or object | Auto (by device class) | Built-in scale name or custom scale definition |
 
@@ -339,8 +339,8 @@ Hide the controls with `display.navigation: false`.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `data.min` | number | Auto | Minimum value for the color scale |
-| `data.max` | number | Auto | Maximum value for the color scale |
+| `data.min` | number or `auto` | Auto | Minimum value for the color scale |
+| `data.max` | number or `auto` | Auto | Maximum value for the color scale |
 
 ### Display Options
 
@@ -349,10 +349,10 @@ Hide the controls with `display.navigation: false`.
 | `display.legend` | boolean | `true` | Show or hide the color scale legend |
 | `display.labels` | boolean | `false` | Show numeric values inside each cell (opt-in) |
 | `display.hide_zero` | boolean | `false` | When labels are on, omit the label if the value displays as 0 |
-| `display.decimals` | number | Auto | Fixed decimal places for cell labels and legend tick labels |
+| `display.decimals` | number | Auto | Fixed decimal places (0-10) for cell labels and legend tick labels |
 | `display.height` | number | Auto | Fixed height in pixels for the grid; cells and date labels adapt to fit |
 | `display.navigation` | boolean | `true` | Show the history navigation controls above the grid |
-| `display.time_labels` | number | Auto | Label every Nth slot on the time axis (every Nth hour with `minute_rows: day`); omit to let the card choose |
+| `display.time_labels` | number | Auto | Label every Nth slot (1-24) on the time axis (every Nth hour with `minute_rows: day`); omit to let the card choose |
 
 ---
 
@@ -362,21 +362,24 @@ Scales are selected automatically based on `device_class`, but can be set explic
 
 ### Absolute Scales
 
-Absolute scales map colors to specific values, regardless of the data range. Units are fixed.
+Absolute scales map colors to specific values, regardless of the data range. Temperature
+scales convert their steps to the sensor's own unit (°C or °F); other units are fixed.
+The last column shows the device class that selects the scale automatically; the others
+have to be named with `scale`.
 
-| Scale Name | Units | Device Class |
+| Scale Name | Units | Auto-selected for |
 |------------|-------|--------------|
-| `carbon dioxide` | ppm | carbon_dioxide |
-| `indoor temperature f` | °F | temperature |
-| `indoor temperature` | °C | temperature |
-| `nitrogen dioxide eaqi` | µg/m³ | nitrogen_dioxide |
-| `outdoor temperature f` | °F | temperature |
+| `carbon dioxide` | ppm | - |
+| `indoor temperature f` | °F | - |
+| `indoor temperature` | °C | - |
+| `nitrogen dioxide eaqi` | µg/m³ | - |
+| `outdoor temperature f` | °F | - |
 | `outdoor temperature` | °C | temperature |
-| `ozone eaqi` | µg/m³ | ozone |
-| `pm10 eaqi` | µg/m³ | pm10 |
-| `pm25 eaqi` | µg/m³ | pm25 |
-| `pm25` | µg/m³ | pm25 |
-| `sulphur dioxide eaqi` | µg/m³ | sulphur_dioxide |
+| `ozone eaqi` | µg/m³ | - |
+| `pm10 eaqi` | µg/m³ | - |
+| `pm25 eaqi` | µg/m³ | - |
+| `pm25` | µg/m³ | - |
+| `sulphur dioxide eaqi` | µg/m³ | - |
 
 ### Relative Scales
 
