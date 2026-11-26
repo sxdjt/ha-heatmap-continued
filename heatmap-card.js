@@ -253,7 +253,7 @@ const BUILTIN_SCALES = [
       "text": "<p>Colors by Cynthia Brewer, <a href=\"https://colorbrewer2.org\" rel=\"noopener\" target=\"_blank\">colorbrewer2.org</a>.\nColorBrewer provides guidance when selecting colors for map visualisations, making them distinct. While it's not a <em>perfect</em> fit for a gradient scale, such as this one, the colors are picked out to be safe for color blindness and offer improved distinction between the various parts of the band.</p>"
     },
     "key": "colorbrewer 5cl rdpu",
-    "name": "ColorBrewer 5-class BuPu",
+    "name": "ColorBrewer 5-class RdPu",
     "steps": [
       {
         "color": "#feebe2",

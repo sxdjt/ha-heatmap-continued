@@ -52,7 +52,7 @@ test('H2: carbon_dioxide and pm25 sensors select their scales again', () => {
     assert.equal(metaFor({}, { device_class: 'pm25' }).scale.key, 'pm25');
 });
 
-test('H3: every built-in scale has a name matching its key', { todo: true }, () => {
+test('H3: the RdPu scale is named RdPu, not BuPu', () => {
     const scales = new HeatmapScales();
     assert.equal(scales.scale_by_key['colorbrewer 5cl rdpu'].name, 'ColorBrewer 5-class RdPu');
 });
