@@ -20,7 +20,11 @@ const CARD_PATH = path.join(__dirname, '..', '..', 'heatmap-card.js');
 // First line after the vendored chroma.js; everything from here on is the card's own code.
 const CARD_CODE_MARKER = '/* ------------------------------------------------------------------------- */\n/* LitElement via Home Assistant bundle';
 
-function loadCard() {
+/*
+    options.customCards: false leaves window.customCards unset, as on a dashboard where
+    this is the first custom card to load.
+*/
+function loadCard(options = {}) {
     const src = fs.readFileSync(CARD_PATH, 'utf8');
 
     // Stub the browser globals the card touches on load. `ha-panel-lovelace`
@@ -29,13 +33,29 @@ function loadCard() {
     // class whose prototype carries the `html`/`css` tagged-template helpers.
     const preamble = `
         globalThis.window = globalThis;
-        window.customCards = [];
+        ${options.customCards === false ? '' : 'window.customCards = [];'}
         function __tag(strings, ...values) { return { strings, values }; }
         class BaseLitElement {}
         BaseLitElement.prototype.html = __tag;
         BaseLitElement.prototype.css = __tag;
         BaseLitElement.prototype.connectedCallback = function () {};
         BaseLitElement.prototype.disconnectedCallback = function () {};
+        // Records listeners so editor tests can fire value-changed at the root.
+        BaseLitElement.prototype.createRenderRoot = function () {
+            const listeners = {};
+            return {
+                listeners,
+                addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+                querySelector() { return null; }
+            };
+        };
+        BaseLitElement.prototype.dispatchEvent = function (event) {
+            (this.dispatched_events = this.dispatched_events || []).push(event);
+            return true;
+        };
+        globalThis.Event = class Event {
+            constructor(type, init = {}) { this.type = type; Object.assign(this, init); }
+        };
         const __registry = {};
         globalThis.customElements = {
             define(name, cls) { __registry[name] = cls; },
@@ -85,7 +105,8 @@ function loadCard() {
         };
     `;
 
-    const context = { console };
+    // URL as in the browser (scale docs links go through safe_http_url()).
+    const context = { console, URL };
     vm.createContext(context);
     /*
         Separate scripts in one context: top-level declarations share the context's

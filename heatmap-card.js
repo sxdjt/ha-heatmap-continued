@@ -5342,7 +5342,7 @@ class HeatmapCardEditor extends LitElement {
         const type = ev.detail?.value;
         if (!type) { return; }
         // An untyped scale is relative (see render_custom_scale_editor()).
-        if (type === (this._config.scale?.type ?? 'relative')) { return; }
+        if (type === (this._config.scale.type ?? 'relative')) { return; }
         const config = deep_clone(this._config);
         config.scale.type = type;
         // Switching to relative: strip values from steps (colors only, evenly spaced)

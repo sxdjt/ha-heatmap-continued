@@ -18,10 +18,25 @@ Run with `npm test`. It runs every `*.test.js` file here with Node's built-in te
 npm run coverage
 ```
 
-For a per-line list of gaps, add `--test-reporter=lcov --test-reporter-destination=<file>` and look for `FNDA:0` and `BRDA:...,0` lines. Pair `FN` and `FNDA` lines by position, not by name: names repeat.
+Every line, function and branch of the card's own code is covered (258 functions, 1238 branches; the vendored chroma.js is not measured). Keep it at 100%: a change that adds a function or branch should add the test that covers it. For a per-line list of gaps, add `--test-reporter=lcov --test-reporter-destination=<file>` and look for `FNDA:0` and `BRDA:...,0` lines. Pair `FN` and `FNDA` lines by position, not by name: names repeat.
 
 ## Known issues
 
 Record a known bug as a test with the `todo` option, describing the intended behavior. It runs and reports as `todo` without failing the suite. When a fix lands, remove the `todo` option. A `todo` test reports the same whether it passes or fails; check with `--test-reporter=tap` that each one is `not ok`.
 
-Sweep findings live in `heatmap-hunt.test.js`.
+Sweep findings live in `heatmap-hunt.test.js`. There are no open `todo` tests.
+
+## Files
+
+| File | Covers |
+|------|--------|
+| `heatmap-card.test.js` | Data builders, combining, bucketing, labels, sizing, units |
+| `heatmap-scales.test.js`, `heatmap-custom-scale.test.js` | Built-in and retired scales, custom scale editor, range hints |
+| `heatmap-history*.test.js` | Raw history fallback (no state_class), DST and +05:30 |
+| `heatmap-minute*.test.js`, `heatmap-smoothing.test.js` | Minute mode (hour and day rows), smoothing |
+| `heatmap-render.test.js` | Full render in HA's order, navigation, legend, tooltip, keyboard, ResizeObserver, headers |
+| `heatmap-coverage.test.js` | Config and custom scale validation, fetch errors, builder edge cases, horizontal layout |
+| `heatmap-editor.test.js` | Editor lifecycle, value-changed handler, switches, range boxes, custom steps, scale docs, card picker |
+| `heatmap-hunt.test.js` | Sweep findings H1-H11 and the Show title switch (E1) |
+
+`helpers/fixtures.js` has the fake hass (answers released by the test), statistics rows and `markup()` / `handlers()` for stub templates; `helpers/fake-dom.js` has a render root and cells for the tooltip and keyboard code.
