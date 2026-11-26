@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Paging quickly through history could leave an older page's data on screen, if its answer arrived after the newer page's.
 - After switching dashboard views and back, axis labels stopped thinning out when the card was resized.
 - With an auto-range scale, a sensor that held one value for the whole window (or `data.min` equal to `data.max`) drew every cell grey. Such cells now take the middle colour of the scale.
+- Visual editor: clearing the Minimum or Maximum box stored an invalid number and the preview showed a configuration error. A blank or non-numeric entry is now ignored, as it already was for step values.
 
 ## [2026.11.12] - 2026-11-12
 

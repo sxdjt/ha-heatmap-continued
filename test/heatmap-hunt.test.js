@@ -313,3 +313,18 @@ test('H9: a relative scale over a flat range colours cells from the scale, not g
     const color = card.render_cell(5, 0, 0).values.at(-2);
     assert.equal(String(color), String(scale.gradient(0.5)), 'the middle of the scale');
 });
+
+test('H10: a cleared or non-numeric range box is ignored, not stored as NaN', () => {
+    const editor = titleEditor({ data: { min: 5, max: 9 } });
+    editor._range_hint = () => undefined;
+    const template = editor.render_range_controls();
+    const changes = template.values.filter((v) => typeof v === 'function' && v.length === 1 && /data\.(min|max) = value/.test(String(v)));
+    assert.equal(changes.length, 2);
+    for (const change of changes) {
+        change({ stopPropagation() {}, target: { value: '' } });
+        change({ stopPropagation() {}, target: { value: 'abc' } });
+    }
+    assert.equal(editor.dispatched.length, 0);
+    changes[0]({ stopPropagation() {}, target: { value: '-2.5' } });
+    assert.equal(editor.dispatched[0].data.min, -2.5);
+});

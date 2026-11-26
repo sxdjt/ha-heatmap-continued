@@ -4818,9 +4818,13 @@ class HeatmapCardEditor extends LitElement {
                     style="display:block;width:100%;padding:8px 12px;font-size:14px;border:1px solid var(--secondary-text-color,#727272);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);box-sizing:border-box;"
                     @change=${(e) => {
                         e.stopPropagation();
+                        // A blank or unparseable box would store NaN, which setConfig
+                        // rejects; keep the last value, as the step value boxes do.
+                        const value = parseFloat(e.target.value);
+                        if (!Number.isFinite(value)) { return; }
                         const config = deep_clone(this._config);
                         if (!config.data) config.data = {};
-                        config.data.min = parseFloat(e.target.value);
+                        config.data.min = value;
                         this._dispatch_config(config);
                     }}
                 >
@@ -4844,9 +4848,13 @@ class HeatmapCardEditor extends LitElement {
                     style="display:block;width:100%;padding:8px 12px;font-size:14px;border:1px solid var(--secondary-text-color,#727272);border-radius:4px;background:var(--card-background-color,#fff);color:var(--primary-text-color);box-sizing:border-box;"
                     @change=${(e) => {
                         e.stopPropagation();
+                        // A blank or unparseable box would store NaN, which setConfig
+                        // rejects; keep the last value, as the step value boxes do.
+                        const value = parseFloat(e.target.value);
+                        if (!Number.isFinite(value)) { return; }
                         const config = deep_clone(this._config);
                         if (!config.data) config.data = {};
-                        config.data.max = parseFloat(e.target.value);
+                        config.data.max = value;
                         this._dispatch_config(config);
                     }}
                 >
