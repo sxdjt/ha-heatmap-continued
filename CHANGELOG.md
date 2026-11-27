@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.11.26-beta.1] - 2026-11-26 (pre-release)
+
 ### Added
 - Visual editor: a "Show title" switch. Off hides the card header (stored as `title: null`, which already worked in YAML); the title box is hidden while it is off.
 
